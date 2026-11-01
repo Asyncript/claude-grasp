@@ -5,6 +5,7 @@
 Scores changed in this release, so some files will move after you update.
 
 - **Clearer labels:** Familiar (70+), Partial (40–69), Unfamiliar (below 40).
+- **New look:** warm Claude colors. Familiar is Claude orange, Partial a lighter tint, Unfamiliar grey, in the dashboard and in the editor's badges. The theme is now a light/dark switch that follows the editor until you flip it.
 - **CodeLens and "Mark as reviewed":** each file Claude edited shows its score above the first line. Marking it reviewed after Claude changed it adds points (`claudeGrasp.codeLens` turns the lens off).
 - **Fairer scores:**
   - A turn that changed more than 3 files splits its plan, question and correction credit between them, unless your prompt named the file.

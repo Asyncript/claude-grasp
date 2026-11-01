@@ -1,42 +1,56 @@
 @import 'tailwindcss';
 
 /* Colors are tokens; dark mode has its own steps rather than an automatic inversion. App.svelte
-   sets data-theme from the Theme menu (Auto follows VS Code's theme). */
+   sets data-theme from the Theme menu (Auto follows VS Code's theme). A warm palette: cream and
+   brown surfaces, a terracotta accent, and dark mode stays brown-black, never cold grey. */
 :root {
   color-scheme: light;
-  --surface-0: #f4f4f1;
-  --surface-1: #fcfcfb;
-  --surface-2: #efeeea;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #77766f;
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --border: rgba(11, 11, 11, 0.1);
-  --accent: #2a78d6;
-  --good: #0ca30c;
-  --warning: #fab219;
-  --critical: #d03b3b;
-  --on-good: #ffffff;
-  --on-warning: #0b0b0b;
-  --on-critical: #ffffff;
-  --good-text: #006300;
-  --critical-text: #b02a2a;
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  --surface-0: #f5ece1;
+  --surface-1: #fbf6ef;
+  --surface-2: #f3e8da;
+  --text-primary: #2a1f17;
+  --text-secondary: #5a4636;
+  --text-muted: #7a6858;
+  --grid: #e8dccd;
+  --axis: #d6c4ae;
+  --border: rgba(120, 72, 40, 0.16);
+  --shadow: rgba(120, 72, 40, 0.18);
+  --accent: #c4582f;
+  --on-accent: #fffaf3;
+  /* Score buckets: one hue that fades out. Familiar is Claude's orange,
+     Partial a lighter tint of it, Unfamiliar a neutral blank. */
+  --familiar: #c15f3c;
+  --partial: #ebbba5;
+  --unfamiliar: #e6ddd1;
+  --on-familiar: #fffaf3;
+  --on-partial: #4a2a1a;
+  --on-unfamiliar: #6b5849;
+  --good-text: #456b38;
+  --critical-text: #a33a26;
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --surface-0: #111110;
-  --surface-1: #1a1a19;
-  --surface-2: #242422;
-  --text-primary: #f0efec;
-  --text-secondary: #c3c2b7;
-  --text-muted: #96958d;
-  --grid: #2c2c2a;
-  --axis: #383835;
-  --border: rgba(255, 255, 255, 0.1);
-  --accent: #3987e5;
-  --good-text: #0ca30c;
-  --critical-text: #f07272;
+  --surface-0: #17120f;
+  --surface-1: #211a16;
+  --surface-2: #2b221d;
+  --text-primary: #f2e6d8;
+  --text-secondary: #cdbfb0;
+  --text-muted: #a8998a;
+  --grid: #3a2e26;
+  --axis: #4a3b30;
+  --border: rgba(242, 230, 216, 0.1);
+  --shadow: rgba(0, 0, 0, 0.4);
+  --accent: #e57a45;
+  --on-accent: #17120f;
+  --familiar: #d97757;
+  --partial: #9a5b43;
+  --unfamiliar: #362d27;
+  --on-familiar: #1a110c;
+  --on-partial: #f6e3d6;
+  --on-unfamiliar: #ad9e8f;
+  --good-text: #86b672;
+  --critical-text: #e0664e;
 }
 
 body {
@@ -75,7 +89,11 @@ button.btn:hover:not(:disabled) {
 button.btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
+}
+h1,
+h2 {
+  font-family: var(--font-serif);
 }
 button.btn:disabled {
   opacity: 0.5;

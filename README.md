@@ -5,15 +5,15 @@
 Claude Grasp reads your Claude Code sessions and your git history, and gives every file Claude
 changed a score from 0 to 100 for how much *you* engaged with it: the plans you shaped, the
 questions you asked, the corrections you made, the commits you wrote yourself. Every point is
-explained, and each file tells you what would turn it green.
+explained, and each file tells you what would make it Familiar.
 
 Everything runs on your machine. No account, no telemetry.
 
-- 🟢 **70–100 Familiar.** You clearly engaged with this code.
+- 🟠 **70–100 Familiar.** You clearly engaged with this code.
 - 🟡 **40–69 Partial.** Some engagement; worth a closer look before you change it.
-- 🔴 **0–39 Unfamiliar.** Claude wrote it and little shows that you know how it works.
+- ⚪ **0–39 Unfamiliar.** Claude wrote it and little shows that you know how it works.
 
-![Project overview: score tiles, file map, and what would make a file green](media/screenshots/overview.jpg)
+![Project overview: score tiles, file map, and what would make a file Familiar](media/screenshots/overview.jpg)
 
 ## Features
 
@@ -22,12 +22,14 @@ Everything runs on your machine. No account, no telemetry.
   - **File map**: one block per file, sized by lines Claude changed, colored by score. Click a block or a bucket to filter.
   - **Trend** of the project score, a **Start here** list and a searchable, sortable file table.
   - **Why this score**: every point behind a file's score, with the evidence (prompts, plans, commits) behind it.
-  - **How to make this green**: which actions would raise the file's score, and by how much.
+  - **How to make this Familiar**: which actions would raise the file's score, and by how much.
   - **Today**: what Claude changed today, plus the optional explain-back question.
-  - **Guide** and **About** tabs; Auto / Light / Dark theme.
-  ![Why this score: every point behind a file's score](media/screenshots/why-this-score.jpg)
+  - **Guide** and **About** tabs; a light/dark switch that follows your editor until you flip it.
+  ![Why this score: every point behind a file's score, in the light theme](media/screenshots/why-this-score.jpg)
+- **CodeLens**: the file's score above its first line, with **Mark as reviewed** for when you've read Claude's changes (`Claude Grasp: Mark This File Reviewed` does the same).
 - **Activity bar view**: your projects with their scores; files lowest score first.
 - **Explorer badges** and a **status bar** score for the file you have open.
+- **Teammates don't count as you**: only commits under your own git emails earn "changed it yourself" points.
 - **Several Claude accounts**: reads every `~/.claude*` config folder (e.g. `~/.claude` and `~/.claude-work`), with an account filter on the dashboard.
 - **Demo**: `Claude Grasp: Open Demo (sample data)` shows a sample project, without touching your data.
 
@@ -79,6 +81,8 @@ diff and the key points. 60% or more adds up to +25 to that file.
 | Setting | Default | Description |
 | --- | --- | --- |
 | `claudeGrasp.configDirs` | `[]` | Claude Code config folders to read. Empty: every `~/.claude*` folder |
+| `claudeGrasp.gitEmails` | `[]` | Your other git author emails. Each repo's `user.email` always counts |
+| `claudeGrasp.ignore` | `[]` | Globs for files that never get a score (`**/generated/**`) |
 | `claudeGrasp.quiz.enabled` | `false` | Turn on the daily explain-back quiz |
 | `claudeGrasp.quiz.questionsPerDay` | `1` | Questions per day (1–5) |
 | `claudeGrasp.quiz.reminder` | `true` | A small daily notification offering the question |
@@ -87,6 +91,7 @@ diff and the key points. 60% or more adds up to +25 to that file.
 | `claudeGrasp.model` | `""` | Model for the quiz (`claude -p --model`). Empty: the account's default |
 | `claudeGrasp.penalties.*` | see above | Penalty weights |
 | `claudeGrasp.explorerBadges` | `true` | Score badges in the Explorer and on editor tabs |
+| `claudeGrasp.codeLens` | `true` | Score and **Mark as reviewed** above the first line of each file Claude edited |
 | `claudeGrasp.refreshIntervalMinutes` | `5` | How often to read new sessions. `0`: startup and Refresh only |
 
 ## How a score is calculated
@@ -156,4 +161,3 @@ npm run package      # claude-grasp-<version>.vsix
 ```
 
 Press **F5** in VS Code to run the extension in an Extension Development Host.
-# claude-grasp

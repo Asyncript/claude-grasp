@@ -35,7 +35,7 @@
       <li><b>File map</b>: one block per file. Bigger block = more lines Claude changed. Color = score. Click a block for the reasons.</li>
       <li><b>Never looked at</b>: files with no sign of your involvement at all. Start reviewing here.</li>
       <li><b>Trend</b>: the project score over time (daily for new projects, weekly later).</li>
-      <li><b>Why this score</b>: every point, where it came from, and what would make the file green.</li>
+      <li><b>Why this score</b>: every point, where it came from, and what would make the file Familiar.</li>
       <li>In the editor: the <b>Explorer badge</b> and the <b>status bar</b> show the score of each file Claude touched.</li>
     </ul>
   </section>
@@ -171,13 +171,14 @@
     margin-right: 0.45rem;
   }
   .dot.green {
-    background: var(--good);
+    background: var(--familiar);
   }
   .dot.yellow {
-    background: var(--warning);
+    background: var(--partial);
   }
   .dot.red {
-    background: var(--critical);
+    background: var(--unfamiliar);
+    box-shadow: inset 0 0 0 1px var(--axis);
   }
   .link {
     color: var(--accent);

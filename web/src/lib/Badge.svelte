@@ -21,15 +21,15 @@
     white-space: nowrap;
   }
   .green {
-    background: var(--good);
-    color: var(--on-good);
+    background: var(--familiar);
+    color: var(--on-familiar);
   }
   .yellow {
-    background: var(--warning);
-    color: var(--on-warning);
+    background: var(--partial);
+    color: var(--on-partial);
   }
   .red {
-    background: var(--critical);
-    color: var(--on-critical);
+    background: var(--unfamiliar);
+    color: var(--on-unfamiliar);
   }
 </style>

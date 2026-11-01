@@ -44,7 +44,7 @@
   const review = () => api.markReviewed(detail.repo.id, f.path).then(() => (reviewError = ''), (e: Error) => (reviewError = e.message));
 
   /** What would add points from here, given what is already counted against each cap. */
-  const toGreen = $derived.by(() => {
+  const toFamiliar = $derived.by(() => {
     const need = c.buckets.green - f.score;
     if (need <= 0) return null;
     const room = (key: keyof typeof c.positive) => {
@@ -90,18 +90,18 @@
     </div>
   </div>
 
-  {#if toGreen}
-    <div class="green-box">
+  {#if toFamiliar}
+    <div class="next-box">
       <h3 class="text-sm font-semibold">
-        How to make this green
-        <Info label="How to make this green">
-          A file turns green at {c.buckets.green}. These actions add points the next time Claude works on the file. Each kind of evidence has a cap; the
+        How to make this Familiar
+        <Info label="How to make this Familiar">
+          A file becomes Familiar at {c.buckets.green}. These actions add points the next time Claude works on the file. Each kind of evidence has a cap; the
           list only shows what still has room. Evidence fades: it loses half its value every {c.halfLifeDays} days, down to {Math.round(c.decayFloor * 100)}%.
         </Info>
       </h3>
-      <p class="secondary text-xs">{toGreen.need} more point{toGreen.need === 1 ? '' : 's'} needed.</p>
+      <p class="secondary text-xs">{toFamiliar.need} more point{toFamiliar.need === 1 ? '' : 's'} needed.</p>
       <ul class="mt-1 space-y-1 text-sm">
-        {#each toGreen.tips as t (t.key)}
+        {#each toFamiliar.tips as t (t.key)}
           <li class="flex justify-between gap-2"><span>{t.text}</span><span class="good shrink-0">+{t.each} each, up to +{t.room}</span></li>
         {/each}
       </ul>
@@ -195,7 +195,7 @@
   .summary {
     line-height: 1.5;
   }
-  .green-box {
+  .next-box {
     border: 1px dashed var(--axis);
     border-radius: 10px;
     padding: 0.6rem 0.75rem;

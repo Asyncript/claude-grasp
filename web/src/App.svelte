@@ -25,9 +25,11 @@
     if (!inVsCode) history.replaceState(null, '', h || '#/');
   }
 
-  // Theme: Auto follows VS Code's theme (or the system's, in the preview).
-  let theme = $state<'auto' | 'light' | 'dark'>(prefs.get('theme', 'auto'));
+  // Theme follows VS Code's (or the system's, in the preview) until you flip the switch.
+  const saved = prefs.get<string>('theme', '');
+  let chosen = $state<'light' | 'dark' | null>(saved === 'light' || saved === 'dark' ? saved : null);
   let editorDark = $state(false);
+  const dark = $derived(chosen ? chosen === 'dark' : editorDark);
   function readEditorTheme() {
     const cl = document.body.classList;
     if (cl.contains('vscode-light') || cl.contains('vscode-high-contrast-light')) editorDark = false;
@@ -38,8 +40,8 @@
   new MutationObserver(readEditorTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readEditorTheme);
   $effect(() => {
-    document.documentElement.dataset.theme = theme === 'auto' ? (editorDark ? 'dark' : 'light') : theme;
-    prefs.set('theme', theme);
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    prefs.set('theme', chosen ?? '');
   });
 
   let account = $state<string>(prefs.get('account', ''));
@@ -169,12 +171,22 @@
           {/each}
         </select>
       {/if}
-      <select class="px-2 py-1 text-sm" bind:value={theme} aria-label="Theme">
-        <option value="auto">Theme: Auto</option>
-        <option value="light">Theme: Light</option>
-        <option value="dark">Theme: Dark</option>
-      </select>
-      <button class="btn" onclick={refresh} disabled={refreshing} title="Read new Claude Code sessions and commits">{refreshing ? 'Reading…' : 'Refresh'}</button>
+      <button class="theme" role="switch" aria-checked={dark} aria-label="Dark theme" title={dark ? 'Switch to light theme' : 'Switch to dark theme'} onclick={() => (chosen = dark ? 'light' : 'dark')}>
+        <span class="knob">{dark ? '☾' : '☀'}</span>
+      </button>
+      <button
+        class="btn icon"
+        class:spin={refreshing}
+        onclick={refresh}
+        disabled={refreshing}
+        title={refreshing ? 'Reading new sessions…' : 'Refresh: read new Claude Code sessions and commits'}
+        aria-label={refreshing ? 'Reading new sessions' : 'Refresh'}
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+          <path d="M21 3v6h-6" />
+        </svg>
+      </button>
     </div>
   </div>
 </header>
@@ -206,10 +218,10 @@
         <ul class="mt-1 text-sm">
           <li>Each file Claude Code changed gets a score from 0 to 100: <b>how well you understand it</b>, judged from what you did, not from the code.</li>
           <li>
-            <span class="good">■</span> <b>{scores.config.buckets.green}+ Familiar</b> · <span class="warn">■</span> <b>{scores.config.buckets.yellow}–{scores.config.buckets.green - 1} Partial</b> ·
-            <span class="crit">■</span> <b>under {scores.config.buckets.yellow} Unfamiliar</b>. A file goes green when you plan with Claude, ask why/how, correct it, or commit changes yourself.
+            <span class="key green"></span><b>{scores.config.buckets.green}+ Familiar</b> · <span class="key yellow"></span><b>{scores.config.buckets.yellow}–{scores.config.buckets.green - 1} Partial</b> ·
+            <span class="key red"></span><b>under {scores.config.buckets.yellow} Unfamiliar</b>. A file becomes Familiar when you plan with Claude, ask why/how, correct it, or commit changes yourself.
           </li>
-          <li>Click any file to see every point behind its score and <b>what would make it green</b>. The <b>i</b> buttons explain each part.</li>
+          <li>Click any file to see every point behind its score and <b>what would make it Familiar</b>. The <b>i</b> buttons explain each part.</li>
           <li>Penalties for auto-accept, "continue" and similar are off unless you turn them on in <b>Settings</b>. See the <button class="link" onclick={() => go('#/guide')}>Guide</button>.</li>
         </ul>
       </section>
@@ -229,7 +241,7 @@
 
     <section class="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <div class="card p-4">
-        <div class="label">How well you know this project <Info label="Project score">The average score of all files Claude changed here, with bigger files counting more. Green means you clearly engaged with most of the code.</Info></div>
+        <div class="label">How well you know this project <Info label="Project score">The average score of all files Claude changed here, with bigger files counting more. Familiar means you clearly engaged with most of the code.</Info></div>
         <div class="mt-1 flex items-baseline gap-2"><span class="text-3xl font-semibold">{scores.summary.score}</span><Badge bucket={scores.summary.bucket} /></div>
         <div class="muted mt-1 text-xs">out of 100</div>
       </div>
@@ -327,7 +339,7 @@
         {:else}
           {#if detailError}<p class="crit mb-3 text-sm">{detailError}</p>{/if}
           <h2 class="font-semibold">Pick a file</h2>
-          <p class="muted mt-1 text-sm">Click a block in the map or a row in the list to see exactly which signals produced its score, and what would make it green.</p>
+          <p class="muted mt-1 text-sm">Click a block in the map or a row in the list to see exactly which signals produced its score, and what would make it Familiar.</p>
           <div class="mt-4 text-sm">
             <div class="secondary text-xs">Claude accounts in this project</div>
             {#each current.accounts as a (a.dir)}
@@ -347,8 +359,58 @@
     font-size: 0.75rem;
     padding: 0.1rem 0.5rem;
     border-radius: 999px;
-    background: var(--warning);
-    color: var(--on-warning);
+    border: 1px dashed var(--axis);
+    color: var(--text-secondary);
+  }
+  .icon {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+  }
+  .spin svg {
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spin svg {
+      animation: none;
+    }
+  }
+  .theme {
+    position: relative;
+    width: 2.75rem;
+    height: 1.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    flex: none;
+  }
+  .theme:hover {
+    border-color: var(--accent);
+  }
+  .knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: calc(1.5rem - 6px);
+    height: calc(1.5rem - 6px);
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    font-size: 0.75rem;
+    line-height: 1;
+    background: var(--accent);
+    color: var(--on-accent);
+    transition: transform 0.15s ease;
+  }
+  .theme[aria-checked='true'] .knob {
+    transform: translateX(1.25rem);
   }
   .tab {
     padding: 0.25rem 0.65rem;
@@ -372,7 +434,8 @@
     border: 1px solid var(--border);
     color: var(--text-secondary);
   }
-  .chip::before {
+  .chip::before,
+  .key {
     content: '';
     display: inline-block;
     width: 0.55rem;
@@ -380,14 +443,18 @@
     border-radius: 999px;
     margin-right: 0.3rem;
   }
-  .chip.green::before {
-    background: var(--good);
+  .chip.green::before,
+  .key.green {
+    background: var(--familiar);
   }
-  .chip.yellow::before {
-    background: var(--warning);
+  .chip.yellow::before,
+  .key.yellow {
+    background: var(--partial);
   }
-  .chip.red::before {
-    background: var(--critical);
+  .chip.red::before,
+  .key.red {
+    background: var(--unfamiliar);
+    box-shadow: inset 0 0 0 1px var(--axis);
   }
   .chip:hover,
   .chip.on {
@@ -415,12 +482,6 @@
   }
   .crit {
     color: var(--critical-text);
-  }
-  .good {
-    color: var(--good);
-  }
-  .warn {
-    color: var(--warning);
   }
   input[type='search'] {
     background: var(--surface-1);

@@ -172,30 +172,30 @@
         "id": "claudeGrasp.understood",
         "description": "Claude Grasp: Familiar files (score 70 or more).",
         "defaults": {
-          "dark": "#3fb950",
-          "light": "#0a7d0a",
-          "highContrast": "#3fb950",
-          "highContrastLight": "#0a7d0a"
+          "dark": "#d97757",
+          "light": "#c15f3c",
+          "highContrast": "#d97757",
+          "highContrastLight": "#c15f3c"
         }
       },
       {
         "id": "claudeGrasp.partial",
         "description": "Claude Grasp: Partial files (40 to 69).",
         "defaults": {
-          "dark": "#d29922",
-          "light": "#9a6700",
-          "highContrast": "#d29922",
-          "highContrastLight": "#9a6700"
+          "dark": "#e8b49c",
+          "light": "#c98468",
+          "highContrast": "#e8b49c",
+          "highContrastLight": "#c98468"
         }
       },
       {
         "id": "claudeGrasp.atRisk",
         "description": "Claude Grasp: Unfamiliar files (below 40).",
         "defaults": {
-          "dark": "#f85149",
-          "light": "#cf222e",
-          "highContrast": "#f85149",
-          "highContrastLight": "#cf222e"
+          "dark": "#8f8880",
+          "light": "#8a8279",
+          "highContrast": "#8f8880",
+          "highContrastLight": "#8a8279"
         }
       }
     ],

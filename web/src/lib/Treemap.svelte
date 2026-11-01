@@ -66,13 +66,15 @@
     outline: none;
   }
   .tile.green {
-    fill: var(--good);
+    fill: var(--familiar);
   }
   .tile.yellow {
-    fill: var(--warning);
+    fill: var(--partial);
   }
   .tile.red {
-    fill: var(--critical);
+    fill: var(--unfamiliar);
+    stroke: var(--axis);
+    stroke-width: 1;
   }
   .tile:hover,
   g:focus-visible .tile {
@@ -90,13 +92,13 @@
     font-weight: 600;
   }
   .green {
-    fill: var(--on-good);
+    fill: var(--on-familiar);
   }
   .yellow {
-    fill: var(--on-warning);
+    fill: var(--on-partial);
   }
   .red {
-    fill: var(--on-critical);
+    fill: var(--on-unfamiliar);
   }
   .tip {
     position: absolute;
@@ -104,7 +106,7 @@
     padding: 0.5rem 0.65rem;
     font-size: 0.8rem;
     width: 250px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 16px var(--shadow);
   }
   .path {
     word-break: break-all;

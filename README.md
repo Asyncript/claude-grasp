@@ -13,6 +13,8 @@ Everything runs on your machine. No account, no telemetry.
 - 🟡 **40–69 Partial.** Some engagement; worth a closer look before you change it.
 - 🔴 **0–39 At risk.** Claude wrote it and little shows that you know how it works.
 
+![Project overview: score tiles, file map, and what would make a file green](media/screenshots/overview.jpg)
+
 ## Features
 
 - **Dashboard** (`Claude Grasp: Open Dashboard`)
@@ -23,6 +25,7 @@ Everything runs on your machine. No account, no telemetry.
   - **How to make this green**: which actions would raise the file's score, and by how much.
   - **Today**: what Claude changed today, plus the optional explain-back question.
   - **Guide** and **About** tabs; Auto / Light / Dark theme.
+  ![Why this score: every point behind a file's score](media/screenshots/why-this-score.jpg)
 - **Activity bar view**: your projects with their scores; files lowest score first.
 - **Explorer badges** and a **status bar** score for the file you have open.
 - **Several Claude accounts**: reads every `~/.claude*` config folder (e.g. `~/.claude` and `~/.claude-work`), with an account filter on the dashboard.
@@ -68,6 +71,8 @@ until you answer). You answer in a sentence or two; `claude -p` grades it 0–10
 diff and the key points. 60% or more adds up to +25 to that file.
 
 **Skipping is always free.** A low grade costs nothing unless you turn on the failed-quiz penalty.
+
+![Today's explain-back question with Submit and Skip](media/screenshots/quiz.jpg)
 
 ## Settings
 

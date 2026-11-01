@@ -1,0 +1,10 @@
+**
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+!media/icon.png
+!media/activity.svg
+!dist/extension.cjs
+!dist/webview/**
+!fixtures/claude/**

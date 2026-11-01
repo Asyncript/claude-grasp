@@ -1,0 +1,326 @@
+{
+  "name": "claude-grasp",
+  "displayName": "Claude Grasp",
+  "description": "How well do you understand the code Claude Code wrote for you? A score for every file, with the reasons behind it.",
+  "version": "0.1.1",
+  "publisher": "Asyncript",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Asyncript/claude-grasp"
+  },
+  "bugs": {
+    "url": "https://github.com/Asyncript/claude-grasp/issues"
+  },
+  "homepage": "https://github.com/Asyncript/claude-grasp#readme",
+  "icon": "media/icon.png",
+  "type": "module",
+  "main": "./dist/extension.cjs",
+  "engines": {
+    "vscode": "^1.101.0",
+    "node": ">=22.13"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "ai",
+    "code review",
+    "comprehension",
+    "understanding"
+  ],
+  "galleryBanner": {
+    "color": "#262624",
+    "theme": "dark"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeGrasp.openDashboard",
+        "title": "Open Dashboard",
+        "category": "Claude Grasp",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "claudeGrasp.refresh",
+        "title": "Refresh",
+        "category": "Claude Grasp",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "claudeGrasp.showFileScore",
+        "title": "Show Score for This File",
+        "category": "Claude Grasp"
+      },
+      {
+        "command": "claudeGrasp.openToday",
+        "title": "Today's Quiz",
+        "category": "Claude Grasp"
+      },
+      {
+        "command": "claudeGrasp.openGuide",
+        "title": "Open Guide",
+        "category": "Claude Grasp",
+        "icon": "$(question)"
+      },
+      {
+        "command": "claudeGrasp.openAbout",
+        "title": "About",
+        "category": "Claude Grasp"
+      },
+      {
+        "command": "claudeGrasp.openSettings",
+        "title": "Open Settings",
+        "category": "Claude Grasp",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "claudeGrasp.openDemo",
+        "title": "Open Demo (sample data)",
+        "category": "Claude Grasp"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "claudeGrasp.refresh",
+          "when": "view == claudeGrasp.projects",
+          "group": "navigation@1"
+        },
+        {
+          "command": "claudeGrasp.openDashboard",
+          "when": "view == claudeGrasp.projects",
+          "group": "navigation@2"
+        },
+        {
+          "command": "claudeGrasp.openGuide",
+          "when": "view == claudeGrasp.projects",
+          "group": "navigation@3"
+        },
+        {
+          "command": "claudeGrasp.openSettings",
+          "when": "view == claudeGrasp.projects",
+          "group": "navigation@4"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "claudeGrasp.showFileScore",
+          "when": "!explorerResourceIsFolder",
+          "group": "navigation@99"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "claudeGrasp.showFileScore",
+          "group": "3_open"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claudeGrasp",
+          "title": "Claude Grasp",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "claudeGrasp": [
+        {
+          "id": "claudeGrasp.projects",
+          "name": "Projects",
+          "icon": "media/activity.svg",
+          "contextualTitle": "Claude Grasp"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "claudeGrasp.projects",
+        "contents": "No files edited by Claude Code found yet.\nClaude Grasp reads your Claude Code sessions (~/.claude*) and scores every file Claude changed.\n[Open Demo](command:claudeGrasp.openDemo)\n[Open Guide](command:claudeGrasp.openGuide)\n[Settings](command:claudeGrasp.openSettings)"
+      }
+    ],
+    "colors": [
+      {
+        "id": "claudeGrasp.understood",
+        "description": "Claude Grasp: files you understand (score 70 or more).",
+        "defaults": {
+          "dark": "#3fb950",
+          "light": "#0a7d0a",
+          "highContrast": "#3fb950",
+          "highContrastLight": "#0a7d0a"
+        }
+      },
+      {
+        "id": "claudeGrasp.partial",
+        "description": "Claude Grasp: files you partly understand (40 to 69).",
+        "defaults": {
+          "dark": "#d29922",
+          "light": "#9a6700",
+          "highContrast": "#d29922",
+          "highContrastLight": "#9a6700"
+        }
+      },
+      {
+        "id": "claudeGrasp.atRisk",
+        "description": "Claude Grasp: files you may not understand (below 40).",
+        "defaults": {
+          "dark": "#f85149",
+          "light": "#cf222e",
+          "highContrast": "#f85149",
+          "highContrastLight": "#cf222e"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "Claude Grasp",
+      "properties": {
+        "claudeGrasp.configDirs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "order": 1,
+          "markdownDescription": "Claude Code config folders to read, e.g. `~/.claude` and `~/.claude-work`. Leave empty to find every `~/.claude*` folder automatically (plus `CLAUDE_CONFIG_DIR`). Each folder is one Claude account."
+        },
+        "claudeGrasp.quiz.enabled": {
+          "type": "boolean",
+          "default": false,
+          "order": 10,
+          "markdownDescription": "Turn on the daily explain-back quiz: a short question about code Claude wrote today, graded by your own `claude -p`. A good answer raises that file's score. Off by default."
+        },
+        "claudeGrasp.quiz.questionsPerDay": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 5,
+          "order": 11,
+          "markdownDescription": "How many questions the daily quiz asks (1–5)."
+        },
+        "claudeGrasp.quiz.reminder": {
+          "type": "boolean",
+          "default": true,
+          "order": 12,
+          "markdownDescription": "When the quiz is on, offer today's question once a day with a small notification. You can always skip it."
+        },
+        "claudeGrasp.quiz.disabledConfigDirs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "order": 13,
+          "markdownDescription": "Claude config folders whose code must **never** be sent to `claude -p` for the quiz (e.g. a work account). Their files still get scores."
+        },
+        "claudeGrasp.claudePath": {
+          "type": "string",
+          "default": "",
+          "order": 14,
+          "markdownDescription": "Full path to the `claude` program, if Claude Grasp can't find it (shell aliases aren't visible to VS Code). Only used by the quiz."
+        },
+        "claudeGrasp.model": {
+          "type": "string",
+          "default": "",
+          "order": 15,
+          "markdownDescription": "Model for the quiz, passed as `claude -p --model`. Empty: the account's default."
+        },
+        "claudeGrasp.penalties.unattended": {
+          "type": "number",
+          "default": 35,
+          "minimum": 0,
+          "maximum": 100,
+          "order": 20,
+          "markdownDescription": "Points taken from a file when all of it was written by headless `claude -p` runs that nobody watched (scaled by the share of its lines). `0` turns it off."
+        },
+        "claudeGrasp.penalties.bareApproval": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 100,
+          "order": 21,
+          "markdownDescription": "Points taken when the turns that changed a file started with just \"ok\", \"continue\", \"yes\" (scaled by their share). **Off (0) by default**, since many people work this way. Strict setting: `20`."
+        },
+        "claudeGrasp.penalties.autoAccept": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 100,
+          "order": 22,
+          "markdownDescription": "Points taken for lines accepted without you looking (auto-accept, allow rules, bypass mode), scaled by their share. **Off (0) by default**. Strict setting: `10`."
+        },
+        "claudeGrasp.penalties.codeVolume": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 100,
+          "order": 23,
+          "markdownDescription": "Points taken when Claude wrote a lot of code for very few of your words (none up to 3 lines per word, all at 15). **Off (0) by default**. Strict setting: `15`."
+        },
+        "claudeGrasp.penalties.failedQuiz": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 100,
+          "order": 24,
+          "markdownDescription": "Points taken per quiz answer graded below 60%. **Off (0) by default**: a wrong answer simply earns nothing. Skipping never costs points. Strict setting: `10`."
+        },
+        "claudeGrasp.explorerBadges": {
+          "type": "boolean",
+          "default": true,
+          "order": 30,
+          "markdownDescription": "Show each file's score as a small colored badge in the Explorer and on editor tabs."
+        },
+        "claudeGrasp.refreshIntervalMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "order": 31,
+          "markdownDescription": "How often to read new Claude Code sessions, in minutes. `0`: only at startup and when you press Refresh."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "tsup && vite build",
+    "dev": "tsx scripts/preview.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && svelte-check --tsconfig web/tsconfig.json",
+    "lint": "eslint . --max-warnings 0",
+    "smoke": "tsx scripts/smoke.ts",
+    "check": "tsx scripts/check.ts",
+    "fixtures": "tsx fixtures/gen.ts",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/d3-hierarchy": "^3.1.7",
+    "@types/node": "~22.20.5",
+    "@types/vscode": "~1.101.0",
+    "@vscode/vsce": "^3.9.2",
+    "d3-hierarchy": "^3.1.2",
+    "eslint": "^10.14.0",
+    "eslint-plugin-svelte": "^3.23.1",
+    "globals": "^17.13.0",
+    "svelte": "^5.57.3",
+    "svelte-check": "^4.7.7",
+    "tailwindcss": "^4.3.3",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12"
+  }
+}

@@ -14,7 +14,7 @@ import { loadRepo, scoreRepo, summarize } from '../scoring/repo';
 
 const DAY_MS = 86_400_000;
 const EXPECTED: Record<string, [score: number, bucket: string]> = {
-  'src/auth/session.ts': [69, 'yellow'],
+  'src/auth/session.ts': [70, 'green'],
   'src/orders/checkout.ts': [74, 'green'],
   'src/orders/pricing.ts': [39, 'red'],
   'src/utils/format.ts': [45, 'yellow'],
@@ -22,7 +22,7 @@ const EXPECTED: Record<string, [score: number, bucket: string]> = {
   'src/reports/daily.ts': [0, 'red'],
 };
 const EXPECTED_STRICT: Record<string, number> = {
-  'src/auth/session.ts': 69,
+  'src/auth/session.ts': 70,
   'src/orders/checkout.ts': 57,
   'src/orders/pricing.ts': 22,
   'src/utils/format.ts': 15,

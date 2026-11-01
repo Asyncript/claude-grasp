@@ -9,9 +9,9 @@ explained, and each file tells you what would turn it green.
 
 Everything runs on your machine. No account, no telemetry.
 
-- 🟢 **70–100 Understood.** You clearly engaged with this code.
+- 🟢 **70–100 Familiar.** You clearly engaged with this code.
 - 🟡 **40–69 Partial.** Some engagement; worth a closer look before you change it.
-- 🔴 **0–39 At risk.** Claude wrote it and little shows that you know how it works.
+- 🔴 **0–39 Unfamiliar.** Claude wrote it and little shows that you know how it works.
 
 ![Project overview: score tiles, file map, and what would make a file green](media/screenshots/overview.jpg)
 
@@ -107,11 +107,18 @@ it, and the turn right after each of those.
 | Named the file or one of its functions, or had it open in the IDE | +4 | 16 |
 | Changed and committed it yourself (no Claude trailer, no Claude edit since the last commit) | +10 | 20 |
 | Changed it outside Claude (weak signal: could be a formatter) | +2 | 6 |
+| Marked it reviewed after Claude changed it (CodeLens above the file, or the dashboard) | +8 | 16 |
 | Explained it back in the quiz (scaled by the grade) | +25 | 30 |
 
-Positive evidence halves in value every 30 days; the breakdown shows the loss as its own line,
-so the numbers always add up. The project score is the average of its files, weighted by lines
+Plan, question and correction credit from a turn that changed more than 3 files is split
+between them (a turn that changed 6 files gives each half), unless your prompt named the file.
+
+Positive evidence halves in value every 30 days but keeps at least a quarter of it; the breakdown
+shows the loss as its own line, so the numbers always add up. The project score is the average of its files, weighted by lines
 changed. **Never looked at** means no positive evidence at all.
+
+Deleted files, files git ignores, and lockfiles, bundles, source maps and snapshots never get a
+score. Add your own globs with `claudeGrasp.ignore`.
 
 Headless `claude -p` sessions that edit files are marked *unattended*: they earn no engagement
 credit and carry the unattended penalty. Headless sessions that only read are ignored.

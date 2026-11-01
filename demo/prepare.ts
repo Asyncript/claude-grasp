@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative } from 'node:path';
-import { FIXTURE_ANCHOR, FIXTURE_AUTHOR, FIXTURE_COMMITS } from '../fixtures/repo';
+import { FIXTURE_ANCHOR, FIXTURE_AUTHOR, FIXTURE_COMMITS, FIXTURE_UNCOMMITTED } from '../fixtures/repo';
 import { packageRoot } from '../shared/paths';
 
 const DAY_MS = 86_400_000;
@@ -59,6 +59,9 @@ function buildFixtureRepo(dir: string, shiftMs: number) {
       env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', ...env },
     });
   run(['init', '-q', '-b', 'main']);
+  // The repo's own identity, so its commits are "yours" whatever the machine's global git email is.
+  run(['config', 'user.name', FIXTURE_AUTHOR.name]);
+  run(['config', 'user.email', FIXTURE_AUTHOR.email]);
   for (const c of FIXTURE_COMMITS) {
     for (const [path, content] of Object.entries(c.files)) {
       mkdirSync(dirname(join(dir, path)), { recursive: true });
@@ -75,6 +78,10 @@ function buildFixtureRepo(dir: string, shiftMs: number) {
       GIT_COMMITTER_EMAIL: FIXTURE_AUTHOR.email,
       GIT_COMMITTER_DATE: when,
     });
+  }
+  for (const [path, content] of Object.entries(FIXTURE_UNCOMMITTED)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), content);
   }
 }
 

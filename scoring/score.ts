@@ -28,6 +28,8 @@ export interface Turn {
   /** Every prompt in the turn, starter included: answers, rejections, interruptions. */
   prompts: Prompt[];
   plans: { ts: number; outcome: 'approved' | 'rejected'; planEdited: boolean }[];
+  /** Distinct files Claude changed (or you rejected a change to) in this turn. Default 1. */
+  files?: number;
 }
 
 export interface FileEdit {
@@ -47,11 +49,13 @@ export interface FileInput {
   /** Turns in which you rejected an edit to this file. */
   rejections: { ts: number; turnId: string | null }[];
   /** Prompts naming the file or its symbols, already matched. */
-  mentions: { ts: number; sessionId: string; excerpt: string; matched: string }[];
+  mentions: { ts: number; sessionId: string; excerpt: string; matched: string; uuid?: string }[];
   ideRefs: { ts: number; sessionId: string; kind: 'ide_open' | 'ide_select' }[];
   externalEdits: { ts: number; sessionId: string }[];
   commits: { sha: string; ts: number; subject: string; attribution: CommitAttribution }[];
   quizzes: { id: number; ts: number; question: string; grade: number }[];
+  /** Times you marked the file reviewed. */
+  reviews?: { ts: number }[];
 }
 
 export interface Evidence {
@@ -84,6 +88,7 @@ export interface FileStats {
   sessions: string[];
   firstEdit: string | null;
   lastEdit: string | null;
+  lastReview: string | null;
 }
 
 export interface FileScore {
@@ -95,7 +100,7 @@ export interface FileScore {
   bucket: Bucket;
   base: number;
   contributions: Contribution[];
-  /** No positive evidence at all: no plan, question, correction, reference, own commit or quiz pass. */
+  /** No positive evidence at all: no plan, question, correction, reference, own commit, review or quiz pass. */
   neverUnderstood: boolean;
   stats: FileStats;
 }
@@ -122,7 +127,8 @@ export function scoreFile(file: FileInput, turns: Map<string, Turn>, now: number
   const edits = upTo(file.edits);
   const attended = edits.filter((e) => !e.unattended);
   const unattended = edits.filter((e) => e.unattended);
-  const decay = (ts: number) => 0.5 ** (Math.max(0, now - ts) / (c.halfLifeDays * DAY_MS));
+  const fade = (ts: number) => 0.5 ** (Math.max(0, now - ts) / (c.halfLifeDays * DAY_MS));
+  const decay = (ts: number) => c.decayFloor + (1 - c.decayFloor) * fade(ts);
 
   // The turns where Claude changed this file (or you rejected a change), plus the turn after each.
   const editTurns = new Set<string>();
@@ -134,7 +140,15 @@ export function scoreFile(file: FileInput, turns: Map<string, Turn>, now: number
     if (next && turns.get(next)!.starter.ts <= now) engaged.add(next);
   }
   const engagedTurns = [...engaged].map((id) => turns.get(id)!);
-  const promptsInTurns = engagedTurns.flatMap((t) => t.prompts).filter((p) => p.ts <= now);
+
+  // A turn that changed many files can't show which of them a question or plan was about, so
+  // the credit is split, unless the prompt named this file.
+  const named = new Set(upTo(file.mentions).flatMap((m) => (m.uuid ? [m.uuid] : [])));
+  const filesOf = (id: string | null) => (id && editTurns.has(id) ? Math.max(1, turns.get(id)!.files ?? 1) : 1);
+  const share = (n: number, uuid: string) => (named.has(uuid) ? 1 : Math.min(1, c.fullCreditFiles / n));
+  const sharedNote = (n: number, s: number) => (s < 1 ? ` (shared by ${n} files changed in that turn)` : '');
+  // The turn after an edit turn shares that edit turn's files.
+  const promptsInTurns = engagedTurns.flatMap((t) => t.prompts.filter((p) => p.ts <= now).map((p) => ({ p, n: Math.max(filesOf(t.id), filesOf(t.prev)) })));
 
   const contributions: Contribution[] = [];
   let decayLoss = 0;
@@ -154,36 +168,42 @@ export function scoreFile(file: FileInput, turns: Map<string, Turn>, now: number
     if (prev) planTurns.add(prev);
   }
   const planItems: Item[] = [];
+  const split = c.fullCreditFiles;
   for (const id of planTurns) {
     const t = turns.get(id)!;
     const hasQuestionOrAnswer = t.prompts.some((p) => p.ts <= now && (p.isQuestion || p.kind === 'answer'));
+    // The plan was carried out in its own turn or the next one.
+    const n = Math.max(filesOf(t.id), filesOf(t.next));
+    const s = share(n, t.starter.uuid);
     for (const p of t.plans) {
       if (p.ts > now || p.outcome !== 'approved') continue;
       const why = p.planEdited ? 'you edited the plan' : t.starter.words >= c.plan.minWords ? `${t.starter.words}-word prompt` : hasQuestionOrAnswer ? 'you answered or asked questions' : null;
-      if (why) planItems.push({ ts: p.ts, points: c.positive.plan.points, text: `Plan approved (${why}): "${t.starter.excerpt}"`, sessionId: t.sessionId });
+      if (why) planItems.push({ ts: p.ts, points: c.positive.plan.points * s, text: `Plan approved (${why}): "${t.starter.excerpt}"${sharedNote(n, s)}`, sessionId: t.sessionId });
     }
   }
-  positive('plan', 'Planned with your input', planItems, `+${c.positive.plan.points} per approved plan with substantive input`);
+  positive('plan', 'Planned with your input', planItems, `+${c.positive.plan.points} per approved plan with substantive input, split when it changed more than ${split} files`);
 
-  const questions = promptsInTurns.filter((p) => p.isQuestion && p.kind !== 'rejection');
+  const questions = promptsInTurns.filter(({ p }) => p.isQuestion && p.kind !== 'rejection');
   positive(
     'question',
     'Asked why / how / what if',
-    questions.map((p) => ({ ts: p.ts, points: c.positive.question.points, text: p.excerpt, sessionId: p.sessionId })),
-    `+${c.positive.question.points} per question in a turn that changed the file or the turn after`,
+    questions.map(({ p, n }) => {
+      const s = share(n, p.uuid);
+      return { ts: p.ts, points: c.positive.question.points * s, text: p.excerpt + sharedNote(n, s), sessionId: p.sessionId };
+    }),
+    `+${c.positive.question.points} per question in a turn that changed the file or the turn after, split when it changed more than ${split} files`,
   );
 
-  const corrections = promptsInTurns.filter((p) => p.kind === 'rejection' || p.kind === 'interrupt' || (p.kind === 'human' && p.isCorrection));
+  const corrections = promptsInTurns.filter(({ p }) => p.kind === 'rejection' || p.kind === 'interrupt' || (p.kind === 'human' && p.isCorrection));
   positive(
     'correction',
     'Corrected or rejected Claude',
-    corrections.map((p) => ({
-      ts: p.ts,
-      points: c.positive.correction.points,
-      text: p.kind === 'interrupt' ? 'Interrupted Claude' : p.kind === 'rejection' ? `Rejected a tool call${p.excerpt ? `: "${p.excerpt}"` : ''}` : p.excerpt,
-      sessionId: p.sessionId,
-    })),
-    `+${c.positive.correction.points} per correction, rejection or interruption in those turns`,
+    corrections.map(({ p, n }) => {
+      const s = share(n, p.uuid);
+      const text = p.kind === 'interrupt' ? 'Interrupted Claude' : p.kind === 'rejection' ? `Rejected a tool call${p.excerpt ? `: "${p.excerpt}"` : ''}` : p.excerpt;
+      return { ts: p.ts, points: c.positive.correction.points * s, text: text + sharedNote(n, s), sessionId: p.sessionId };
+    }),
+    `+${c.positive.correction.points} per correction, rejection or interruption in those turns, split the same way`,
   );
 
   const refItems: Item[] = [
@@ -194,12 +214,14 @@ export function scoreFile(file: FileInput, turns: Map<string, Turn>, now: number
 
   const commits = upTo(file.commits);
   const ambiguous = commits.filter((x) => x.attribution === 'ambiguous').length;
+  const others = commits.filter((x) => x.attribution === 'other').length;
   positive(
     'humanCommit',
     'Changed it yourself (git)',
     commits.filter((x) => x.attribution === 'human').map((x) => ({ ts: x.ts, points: c.positive.humanCommit.points, text: x.subject, sha: x.sha })),
     `+${c.positive.humanCommit.points} per commit with no Claude trailer and no Claude edit since the previous commit` +
-      (ambiguous ? `. ${ambiguous} commit${ambiguous > 1 ? 's' : ''} without a trailer followed Claude edits, so they count for nothing` : ''),
+      (ambiguous ? `. ${ambiguous} commit${ambiguous > 1 ? 's' : ''} without a trailer followed Claude edits, so they count for nothing` : '') +
+      (others ? `. ${others} commit${others > 1 ? 's' : ''} by other people count for nothing` : ''),
   );
 
   positive(
@@ -208,6 +230,17 @@ export function scoreFile(file: FileInput, turns: Map<string, Turn>, now: number
     upTo(file.externalEdits).map((x) => ({ ts: x.ts, points: c.positive.externalEdit.points, text: 'Claude Code saw the file change outside Claude (you or a tool)', sessionId: x.sessionId })),
     `+${c.positive.externalEdit.points} each; weak, since a formatter or another tool can cause it too`,
   );
+
+  // A review counts only when Claude changed the file since your previous one: reading the
+  // same code again shows nothing new.
+  const reviews = upTo(file.reviews ?? []).sort((a, b) => a.ts - b.ts);
+  const reviewItems: Item[] = [];
+  let since = -Infinity;
+  for (const r of reviews) {
+    if (edits.some((e) => e.ts > since && e.ts <= r.ts)) reviewItems.push({ ts: r.ts, points: c.positive.reviewed.points, text: "You marked it reviewed after Claude's changes" });
+    since = r.ts;
+  }
+  positive('reviewed', 'Marked reviewed', reviewItems, `+${c.positive.reviewed.points} per review you marked after Claude changed the file`);
 
   const quizzes = upTo(file.quizzes);
   const passed = quizzes.filter((q) => q.grade >= c.quizPassGrade);
@@ -229,11 +262,11 @@ export function scoreFile(file: FileInput, turns: Map<string, Turn>, now: number
     key: 'decay',
     label: 'Time decay',
     points: round1(-decayLoss),
-    detail: `Positive evidence halves in value every ${c.halfLifeDays} days`,
+    detail: `Positive evidence halves in value every ${c.halfLifeDays} days, but keeps at least ${Math.round(c.decayFloor * 100)}% of it`,
     evidence: [],
   });
 
-  const fail = capped('quizFail', 'Failed explain-back', failed.map((q) => ({ ts: q.ts, points: c.negative.quizFail.points, text: `${Math.round(q.grade * 100)}%: ${q.question}` })), c.negative.quizFail.cap, `−${c.negative.quizFail.points} per answer graded below ${Math.round(c.quizPassGrade * 100)}%, fading with the same half-life`, decay);
+  const fail = capped('quizFail', 'Failed explain-back', failed.map((q) => ({ ts: q.ts, points: c.negative.quizFail.points, text: `${Math.round(q.grade * 100)}%: ${q.question}` })), c.negative.quizFail.cap, `−${c.negative.quizFail.points} per answer graded below ${Math.round(c.quizPassGrade * 100)}%, fading with the same half-life`, fade);
   contributions.push({ key: fail.key, label: fail.label, detail: fail.detail, points: round1(-fail.decayed), off: !c.negative.quizFail.points, evidence: fail.evidence.map((e) => ({ ...e, points: -e.points })) });
 
   // Bare approvals: share of the edit turns that a bare "ok" / "continue" started.
@@ -285,7 +318,7 @@ export function scoreFile(file: FileInput, turns: Map<string, Turn>, now: number
 
   const raw = round1(c.base + contributions.reduce((n, x) => n + x.points, 0));
   const score = Math.round(Math.min(100, Math.max(0, raw)));
-  const neverUnderstood = (['plan', 'question', 'correction', 'reference', 'humanCommit', 'quizPass'] as const).every(
+  const neverUnderstood = (['plan', 'question', 'correction', 'reference', 'humanCommit', 'reviewed', 'quizPass'] as const).every(
     (k) => !contributions.find((x) => x.key === k)?.evidence.length,
   );
   const sessions = [...new Set(edits.map((e) => e.sessionId))];
@@ -309,6 +342,7 @@ export function scoreFile(file: FileInput, turns: Map<string, Turn>, now: number
       sessions,
       firstEdit: times.length ? iso(times[0]!) : null,
       lastEdit: times.length ? iso(times.at(-1)!) : null,
+      lastReview: reviews.length ? iso(reviews.at(-1)!.ts) : null,
     },
   };
 }

@@ -173,4 +173,57 @@ export const MIGRATIONS: string[] = [
   -- A skipped question counts neither for nor against the file.
   ALTER TABLE quiz_questions ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  -- Two VS Code windows reading the same transcript could store its rows twice. Keep the first
+  -- copy of each and make duplicates impossible from now on.
+  DELETE FROM prompts WHERE id NOT IN (SELECT MIN(id) FROM prompts GROUP BY source, uuid);
+  DELETE FROM edits WHERE id NOT IN (SELECT MIN(id) FROM edits GROUP BY source, tool_use_id, rel_path);
+  DELETE FROM plans WHERE id NOT IN (SELECT MIN(id) FROM plans GROUP BY source, tool_use_id);
+  DELETE FROM file_refs WHERE id NOT IN (SELECT MIN(id) FROM file_refs GROUP BY source, rel_path, kind, ts, turn_id);
+
+  DROP INDEX prompts_source;
+  DROP INDEX edits_source;
+  DROP INDEX plans_source;
+  DROP INDEX refs_source;
+  CREATE UNIQUE INDEX prompts_key ON prompts (source, uuid);
+  CREATE UNIQUE INDEX edits_key ON edits (source, tool_use_id, rel_path);
+  CREATE UNIQUE INDEX plans_key ON plans (source, tool_use_id);
+  CREATE UNIQUE INDEX refs_key ON file_refs (source, rel_path, kind, COALESCE(ts, ''), COALESCE(turn_id, ''));
+
+  -- Only one window ingests at a time. A lease rather than a lock, so a crashed window's expires.
+  CREATE TABLE ingest_lease (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    owner TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  `,
+  `
+  -- Which parser read each transcript. Rows from an older parser are read again from the start,
+  -- so a parsing fix reaches data stored before it. Existing rows came from parser 1.
+  ALTER TABLE transcripts ADD COLUMN parser_version INTEGER NOT NULL DEFAULT 1;
+  `,
+  `
+  -- The repo's git user.email at the last scan: commits by anyone else never count as yours.
+  ALTER TABLE repos ADD COLUMN user_email TEXT;
+  `,
+  `
+  -- Of the files Claude edited, the ones git ignores (build output, .env, …): they never get a score.
+  CREATE TABLE ignored_files (
+    repo_id INTEGER NOT NULL REFERENCES repos(id),
+    rel_path TEXT NOT NULL,
+    PRIMARY KEY (repo_id, rel_path)
+  );
+  -- The last edits rowid whose file was checked against .gitignore.
+  ALTER TABLE repos ADD COLUMN ignore_checked INTEGER;
+  `,
+  `
+  -- You marking a file reviewed ("I've read Claude's changes") from the editor or the dashboard.
+  CREATE TABLE reviews (
+    id INTEGER PRIMARY KEY,
+    repo_id INTEGER NOT NULL REFERENCES repos(id),
+    rel_path TEXT NOT NULL,
+    ts TEXT NOT NULL
+  );
+  CREATE INDEX reviews_file ON reviews(repo_id, rel_path);
+  `,
 ];

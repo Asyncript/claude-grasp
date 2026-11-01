@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SQLInputValue } from 'node:sqlite';
@@ -6,10 +6,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDb, type DB } from '../db';
 import { prepareDemo, type DemoData } from '../demo/prepare';
 import { SESSION_IDS } from '../fixtures/repo';
-import { ingest } from '../ingest/run';
+import { ingest, markForRebuild } from '../ingest/run';
 import { llmWorkdir, projectDirName } from '../shared/paths';
 
 let db: DB;
+let dbFile: string;
 let demo: DemoData;
 const count = (sql: string, ...args: SQLInputValue[]) => (db.prepare(sql).get(...args) as { n: number }).n;
 const sessionFile = (id: string) => join(demo.roots[0]!, 'projects', '-demo-shop-api', `${id}.jsonl`);
@@ -17,7 +18,8 @@ const sessionFile = (id: string) => join(demo.roots[0]!, 'projects', '-demo-shop
 beforeEach(() => {
   const home = mkdtempSync(join(tmpdir(), 'claude-grasp-ingest-'));
   demo = prepareDemo(join(home, 'demo'));
-  db = openDb(join(home, 'claude-grasp.db'));
+  dbFile = join(home, 'claude-grasp.db');
+  db = openDb(dbFile);
 });
 
 describe('ingest on fixtures', () => {
@@ -97,6 +99,65 @@ describe('ingest on fixtures', () => {
     await ingest(db, demo.roots);
     expect(count('SELECT COUNT(*) n FROM edits')).toBe(before);
     expect(count('SELECT COUNT(*) n FROM prompts WHERE session_id = ?', SESSION_IDS.plan)).toBe(3);
+  });
+});
+
+describe('parser versions', () => {
+  it('reads a transcript stored by an older parser again, without duplicates', async () => {
+    await ingest(db, demo.roots);
+    const edits = count('SELECT COUNT(*) n FROM edits');
+    db.prepare("UPDATE transcripts SET parser_version = 0 WHERE path = ?").run(sessionFile(SESSION_IDS.plan));
+    const s = await ingest(db, demo.roots);
+    expect([s.parsed, s.unchanged]).toEqual([1, 6]);
+    expect(count('SELECT COUNT(*) n FROM edits')).toBe(edits);
+    expect(count('SELECT COUNT(*) n FROM transcripts WHERE parser_version = 0')).toBe(0);
+  });
+
+  it('rebuilds everything but keeps rows of transcripts Claude Code deleted', async () => {
+    await ingest(db, demo.roots);
+    const edits = count('SELECT COUNT(*) n FROM edits');
+    rmSync(sessionFile(SESSION_IDS.plan));
+    markForRebuild(db);
+    const s = await ingest(db, demo.roots);
+    expect(s.parsed).toBe(6);
+    expect(count('SELECT COUNT(*) n FROM edits')).toBe(edits);
+    expect(count('SELECT COUNT(*) n FROM repos WHERE last_head IS NULL')).toBe(0);
+  });
+});
+
+describe('several VS Code windows on one database', () => {
+  const totals = () => ['prompts', 'edits', 'plans', 'file_refs'].map((t) => count(`SELECT COUNT(*) n FROM ${t}`));
+
+  it('lets one window ingest at a time and never stores a row twice', async () => {
+    const other = openDb(dbFile);
+    const [a, b] = await Promise.all([ingest(db, demo.roots), ingest(other, demo.roots)]);
+    expect([a.busy, b.busy].sort()).toEqual([false, true]);
+    const once = totals();
+
+    // The lease is released, so the other window can run next; it finds nothing new.
+    const c = await ingest(other, demo.roots);
+    expect([c.busy, c.parsed, c.unchanged]).toEqual([false, 0, 7]);
+    expect(totals()).toEqual(once);
+    expect(count('SELECT COUNT(*) n FROM ingest_lease')).toBe(0);
+    other.close();
+  });
+
+  it('waits out a live lease, but takes over an expired one', async () => {
+    db.prepare("INSERT INTO ingest_lease (id, owner, expires_at) VALUES (1, 'crashed-window', ?)").run(Date.now() + 60_000);
+    expect((await ingest(db, demo.roots)).busy).toBe(true);
+    db.prepare('UPDATE ingest_lease SET expires_at = ?').run(Date.now() - 1);
+    const s = await ingest(db, demo.roots);
+    expect([s.busy, s.parsed]).toEqual([false, 7]);
+  });
+
+  it('ignores rows read a second time from an overlapping offset', async () => {
+    await ingest(db, demo.roots);
+    const once = totals();
+    // As if another window stored these lines after this one read the old offset.
+    db.prepare("UPDATE transcripts SET byte_offset = 0, size = 0, state = '{\"meta\":{},\"turnId\":null,\"permissionMode\":null,\"pending\":{},\"lines\":0,\"bad\":0}'").run();
+    const s = await ingest(db, demo.roots);
+    expect([s.parsed, s.prompts, s.edits]).toEqual([7, 0, 0]);
+    expect(totals()).toEqual(once);
   });
 });
 

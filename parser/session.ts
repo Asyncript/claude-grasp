@@ -46,6 +46,12 @@ export interface ParseOutput {
   refs: FileRefEvent[];
 }
 
+/**
+ * Bump whenever a change here (or in human.ts, text.ts, cues.ts) changes what a transcript
+ * produces. Transcripts read by an older version are read again from the start.
+ */
+export const PARSER_VERSION = 1;
+
 const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit']);
 const MAX_PENDING = 500;
 export const BASH_BULK_LIMIT = 20;

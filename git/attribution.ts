@@ -6,31 +6,35 @@ export function isClaudeCommit(body: string, authorEmail = ''): boolean {
 }
 
 /**
- * claude: has the trailer. human: no trailer and no Claude edit explains it.
+ * claude: has the trailer. human: yours, no trailer, and no Claude edit explains it.
+ * other: someone else's (a teammate), so it says nothing about your understanding.
  * ambiguous: no trailer, but Claude edited the file since the previous commit,
  * so the commit may just be Claude's work committed without a trailer.
  * prior: before Claude ever touched the file, so it says nothing about later understanding.
  */
-export type CommitAttribution = 'claude' | 'human' | 'ambiguous' | 'prior';
+export type CommitAttribution = 'claude' | 'human' | 'ambiguous' | 'prior' | 'other';
 
 export interface FileCommit {
   sha: string;
   ts: number;
   isClaude: boolean;
+  email?: string;
 }
 
 /**
  * Attributes each commit that touched one file.
  * @param commits that file's commits, any order
  * @param claudeEditTimes when transcripts show Claude editing that file (ms)
+ * @param isMine whether an author email is yours; without it every author is
  */
-export function attributeFileCommits(commits: FileCommit[], claudeEditTimes: number[]) {
+export function attributeFileCommits(commits: FileCommit[], claudeEditTimes: number[], isMine?: (email: string) => boolean) {
   const sorted = [...commits].sort((a, b) => a.ts - b.ts);
   const edits = [...claudeEditTimes].sort((a, b) => a - b);
   const firstClaude = Math.min(edits[0] ?? Infinity, sorted.find((c) => c.isClaude)?.ts ?? Infinity);
   return sorted.map((c, i) => {
     let attribution: CommitAttribution;
     if (c.isClaude) attribution = 'claude';
+    else if (isMine && !isMine(c.email ?? '')) attribution = 'other';
     else if (c.ts < firstClaude) attribution = 'prior';
     else {
       const prevTs = i > 0 ? sorted[i - 1]!.ts : -Infinity;

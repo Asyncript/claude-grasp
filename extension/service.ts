@@ -1,9 +1,10 @@
 // Everything the dashboard, tree, badges and status bar ask for. No `vscode` import, so the dev
 // preview and the tests use exactly the same code as the extension.
-import { basename, relative, sep } from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
+import { basename, sep } from 'node:path';
 import type { DB } from '../db';
 import { answerQuestion, ensureQuiz, localDay, quizFor, skipQuestion, todaySummary, type QuizView, type TodaySummary } from '../explain/today';
-import { ingest, type IngestStats } from '../ingest/run';
+import { ingest, markForRebuild, type IngestStats } from '../ingest/run';
 import type { QuizModel } from '../llm';
 import { SCORING, type Bucket, type ScoringConfig } from '../scoring/config';
 import { loadRepo, scoreRepo, summarize, trend, trendStepDays, type RepoData, type RepoSummary } from '../scoring/repo';
@@ -119,13 +120,30 @@ export interface PathScore {
   path: string;
   score: number;
   bucket: Bucket;
+  /** Claude changed the file since you last marked it reviewed (or you never did). */
+  reviewDue: boolean;
+}
+
+/** Scores depend on the time (evidence decays), so they're recomputed at least this often even when nothing new was read. */
+const RESCORE_MS = 60 * 60_000;
+
+interface CacheEntry {
+  data: RepoData;
+  scores: FileScore[];
+  /** Trend per account filter ('' for all): the costliest thing to compute, so kept too. */
+  trends: Map<string, { points: TrendPoint[]; stepDays: number }>;
 }
 
 export class GraspService {
-  private cache = new Map<number, { data: RepoData; scores: FileScore[] }>();
-  private repoList: { id: number; name: string; path: string }[] | null = null;
+  private cache = new Map<number, CacheEntry>();
+  private scoredAt = Date.now();
+  /** SQLite's data_version: it changes when another connection (another window) commits. */
+  private dataVersion = -1;
+  private repoList: { id: number; name: string; path: string; roots: string[] }[] | null = null;
+  private byPath: Map<string, PathScore> | null = null;
   private queue: Promise<unknown> = Promise.resolve();
   private ingesting: Promise<IngestStats> | null = null;
+  private quizzing: Promise<QuizView | null> | null = null;
   private listeners = new Set<() => void>();
 
   constructor(private o: ServiceOptions) {}
@@ -155,8 +173,10 @@ export class GraspService {
   }
 
   private invalidate() {
+    this.scoredAt = Date.now();
     this.cache.clear();
     this.repoList = null;
+    this.byPath = null;
     for (const fn of this.listeners) fn();
   }
 
@@ -173,23 +193,30 @@ export class GraspService {
   private repo(repoId: number) {
     let hit = this.cache.get(repoId);
     if (!hit) {
-      const data = loadRepo(this.o.db, repoId);
+      const data = loadRepo(this.o.db, repoId, { gitEmails: this.o.config.gitEmails, ignore: this.o.config.ignore });
       if (!data) return null;
-      hit = { data, scores: scoreRepo(data, Date.now(), this.scoring) };
+      hit = { data, scores: scoreRepo(data, Date.now(), this.scoring), trends: new Map() };
       this.cache.set(repoId, hit);
     }
     return hit;
   }
 
   private repos() {
-    this.repoList ??= this.o.db
-      .prepare('SELECT id, name, path FROM repos WHERE id IN (SELECT DISTINCT repo_id FROM edits) ORDER BY name')
-      .all() as { id: number; name: string; path: string }[];
+    this.repoList ??= (this.o.db.prepare('SELECT id, name, path FROM repos WHERE id IN (SELECT DISTINCT repo_id FROM edits) ORDER BY name').all() as { id: number; name: string; path: string }[])
+      // A repo that was moved or deleted has nothing left to understand.
+      .filter((r) => existsSync(r.path))
+      // The editor may open the repo through a symlink, or (on Windows) with another drive-letter case.
+      .map((r) => ({ ...r, roots: [...new Set([r.path, realpathSync(r.path)].map(pathKey))] }));
     return this.repoList;
   }
 
+  /** Whether `path` is a repo Claude edited. Cheap: no scoring. */
+  isProject(path: string): boolean {
+    return this.repos().some((r) => r.roots.includes(pathKey(path)));
+  }
+
   /** Files the given account (config dir) wrote lines in; everything without one. */
-  private filtered(hit: { data: RepoData; scores: FileScore[] }, account?: string) {
+  private filtered(hit: CacheEntry, account?: string) {
     if (!account) return hit.scores;
     return hit.scores.filter((s) => hit.data.configDirs.get(s.path)?.some((d) => d.dir === account));
   }
@@ -217,6 +244,8 @@ export class GraspService {
       if (account && !accounts.some((a) => a.dir === account)) continue;
       const hit = this.repo(r.id);
       const scores = hit ? this.filtered(hit, account) : [];
+      // Every file it had was deleted or ignored since.
+      if (!scores.length) continue;
       const times = scores.flatMap((s) => [s.stats.firstEdit, s.stats.lastEdit]).filter((t): t is string => !!t).sort();
       projects.push({
         ...r,
@@ -262,14 +291,19 @@ export class GraspService {
     const hit = this.repo(repoId);
     if (!hit) throw new Error('unknown project');
     const scores = this.filtered(hit, account);
-    const keep = new Set(scores.map((s) => s.path));
-    const data = account ? { ...hit.data, files: hit.data.files.filter((f) => keep.has(f.path)) } : hit.data;
     const never = scores.filter((s) => s.neverUnderstood).sort((a, b) => b.stats.linesChanged - a.stats.linesChanged);
-    const stepDays = trendStepDays(data);
+    let t = hit.trends.get(account ?? '');
+    if (!t) {
+      const keep = new Set(scores.map((s) => s.path));
+      const data = account ? { ...hit.data, files: hit.data.files.filter((f) => keep.has(f.path)) } : hit.data;
+      const stepDays = trendStepDays(data);
+      t = { points: trend(data, Date.now(), stepDays === 1 ? 28 : 12, stepDays, this.scoring), stepDays };
+      hit.trends.set(account ?? '', t);
+    }
     return {
       summary: summarize(scores, this.scoring),
-      trend: trend(data, Date.now(), stepDays === 1 ? 28 : 12, stepDays, this.scoring),
-      trendStepDays: stepDays,
+      trend: t.points,
+      trendStepDays: t.stepDays,
       neverUnderstood: never.map((s) => ({ path: s.path, score: s.score, lines: s.stats.linesChanged, edits: s.stats.edits, lastEdit: s.stats.lastEdit, unattendedShare: s.stats.unattendedShare })),
       config: this.scoring,
     };
@@ -277,23 +311,20 @@ export class GraspService {
 
   /** The score of a file on disk, if Claude edited it. The deepest repo containing it wins. */
   scoreForPath(absPath: string): PathScore | null {
-    let best: { id: number; name: string; path: string } | null = null;
-    for (const r of this.repos()) {
-      if ((absPath === r.path || absPath.startsWith(r.path + sep)) && (!best || r.path.length > best.path.length)) best = r;
-    }
-    if (!best) return null;
-    const rel = relative(best.path, absPath).split(sep).join('/');
-    const s = this.repo(best.id)?.scores.find((x) => x.path === rel);
-    return s ? { repoId: best.id, repo: best.name, path: s.path, score: s.score, bucket: s.bucket } : null;
+    return this.allScores().get(pathKey(absPath)) ?? null;
   }
 
-  /** Every scored file by absolute path, for explorer badges. */
+  /** Every scored file, keyed by pathKey() of its absolute path, for explorer badges. */
   allScores(): Map<string, PathScore> {
+    if (this.byPath) return this.byPath;
     const out = new Map<string, PathScore>();
     for (const r of this.repos()) {
-      for (const s of this.repo(r.id)?.scores ?? []) out.set([r.path, ...s.path.split('/')].join(sep), { repoId: r.id, repo: r.name, path: s.path, score: s.score, bucket: s.bucket });
+      for (const s of this.repo(r.id)?.scores ?? []) {
+        const reviewDue = !s.stats.lastReview || (!!s.stats.lastEdit && s.stats.lastEdit > s.stats.lastReview);
+        for (const root of r.roots) out.set(pathKey([root, ...s.path.split('/')].join(sep)), { repoId: r.id, repo: r.name, path: s.path, score: s.score, bucket: s.bucket, reviewDue });
+      }
     }
-    return out;
+    return (this.byPath = out);
   }
 
   today(): TodaySummary & { quizEnabled: boolean } {
@@ -304,31 +335,64 @@ export class GraspService {
     return quizFor(this.o.db, localDay());
   }
 
+  /** For the quiz: the model call runs outside the write queue (it can take minutes), only the write goes through it. */
+  private write = <T>(fn: () => T): Promise<T> => this.exclusive(fn);
+
+  /** Concurrent calls share one run, so a double click asks the model once. */
   makeQuiz(): Promise<QuizView | null> {
     if (!this.o.quizEnabled) throw new Error('The explain-back quiz is off. Turn it on in Settings (Claude Grasp › Quiz: Enabled).');
-    return this.exclusive(() => ensureQuiz(this.o.db, this.o.model, this.o.config));
+    this.quizzing ??= ensureQuiz(this.o.db, this.o.model, this.o.config, Date.now(), this.write).finally(() => (this.quizzing = null));
+    return this.quizzing;
   }
 
-  answer(id: number, answer: string) {
+  async answer(id: number, answer: string) {
     if (typeof answer !== 'string') throw new Error('answer must be a string');
-    return this.exclusive(async () => {
-      const r = await answerQuestion(this.o.db, this.o.model, id, answer);
-      this.invalidate();
-      return r;
-    });
+    const r = await answerQuestion(this.o.db, this.o.model, id, answer, Date.now(), this.write);
+    this.invalidate();
+    return r;
   }
 
   skip(id: number) {
     return this.exclusive(() => skipQuestion(this.o.db, id));
   }
 
-  /** Reads new transcript lines and commits. Concurrent calls share one run. */
+  /** You read Claude's changes to a file. */
+  async markReviewed(repoId: number, path: string) {
+    if (!this.repo(repoId)?.scores.some((s) => s.path === path)) throw new Error(`unknown file ${path}`);
+    await this.exclusive(() => this.o.db.prepare('INSERT INTO reviews (repo_id, rel_path, ts) VALUES (?, ?, ?)').run(repoId, path, new Date().toISOString()));
+    this.invalidate();
+  }
+
+  /**
+   * Reads new transcript lines and commits. Concurrent calls share one run. Scores are
+   * recomputed only when something changed: here, in another window, or with the time.
+   */
   ingest(): Promise<IngestStats> {
-    this.ingesting ??= this.exclusive(() => ingest(this.o.db, this.o.roots())).finally(() => {
-      this.ingesting = null;
-      this.invalidate();
-    });
+    this.ingesting ??= this.exclusive(() => ingest(this.o.db, this.o.roots()))
+      .then(
+        (s) => {
+          if (this.outdated(s)) this.invalidate();
+          return s;
+        },
+        (e: unknown) => {
+          this.invalidate();
+          throw e;
+        },
+      )
+      .finally(() => (this.ingesting = null));
     return this.ingesting;
+  }
+
+  private outdated(s: IngestStats): boolean {
+    const { data_version: v } = this.o.db.prepare('PRAGMA data_version').get() as { data_version: number };
+    const otherWindow = v !== this.dataVersion;
+    this.dataVersion = v;
+    return s.changed || s.busy || otherWindow || Date.now() - this.scoredAt >= RESCORE_MS;
+  }
+
+  /** Reads every transcript and every repo's history again, e.g. after a parser fix. Keeps quiz answers. */
+  rebuild(): Promise<IngestStats> {
+    return this.exclusive(() => markForRebuild(this.o.db)).then(() => this.ingest());
   }
 
   private sessionsFor(s: FileScore): SessionRow[] {
@@ -368,8 +432,12 @@ export class GraspService {
       case 'makeQuiz': return this.makeQuiz();
       case 'answer': return this.answer(num(a), str(b));
       case 'skip': return this.skip(num(a));
+      case 'markReviewed': return this.markReviewed(num(a), str(b));
       case 'ingest': return this.ingest();
       default: throw new Error(`unknown method ${method}`);
     }
   }
 }
+
+/** How a file path is looked up: case-insensitive on Windows, where the file system is. */
+export const pathKey = (p: string) => (process.platform === 'win32' ? p.toLowerCase() : p);

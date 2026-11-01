@@ -13,6 +13,10 @@ export interface GraspConfig {
   model?: string;
   /** Explain-back questions per day (1-5). Default 1. */
   questionsPerDay?: number;
+  /** Your git author emails besides each repo's user.email; commits by anyone else never count as yours. */
+  gitEmails?: string[];
+  /** Globs of files that never get a score, besides lockfiles, bundles and snapshots. */
+  ignore?: string[];
   /** Weights; default `SCORING`. */
   scoring?: ScoringConfig;
 }

@@ -20,9 +20,13 @@ export function openDb(file: string): DB {
   return db;
 }
 
-/** Runs `fn` inside BEGIN/COMMIT, rolling back if it throws. */
+/**
+ * Runs `fn` inside BEGIN IMMEDIATE/COMMIT, rolling back if it throws. IMMEDIATE takes the write
+ * lock up front: every VS Code window opens this database, and a deferred transaction that
+ * reads first can't be upgraded to a write while another window holds the lock.
+ */
 export function transaction<T>(db: DB, fn: () => T): T {
-  db.exec('BEGIN');
+  db.exec('BEGIN IMMEDIATE');
   try {
     const result = fn();
     db.exec('COMMIT');
@@ -33,12 +37,16 @@ export function transaction<T>(db: DB, fn: () => T): T {
   }
 }
 
+/** One migration per transaction. The version is read under the write lock, so two windows starting together can't both run it. */
 function migrate(db: DB) {
-  const { user_version: version } = db.prepare('PRAGMA user_version').get() as { user_version: number };
-  for (let v = version; v < MIGRATIONS.length; v++) {
-    transaction(db, () => {
+  for (;;) {
+    const done = transaction(db, () => {
+      const { user_version: v } = db.prepare('PRAGMA user_version').get() as { user_version: number };
+      if (v >= MIGRATIONS.length) return true;
       db.exec(MIGRATIONS[v]!);
       db.exec(`PRAGMA user_version = ${v + 1}`);
+      return false;
     });
+    if (done) return;
   }
 }

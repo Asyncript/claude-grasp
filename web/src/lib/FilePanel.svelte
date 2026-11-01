@@ -1,7 +1,7 @@
 <script lang="ts">
   import Badge from './Badge.svelte';
   import Info from './Info.svelte';
-  import { host, pct, relTime, type Contribution, type FileDetail } from './api';
+  import { api, host, pct, relTime, type Contribution, type FileDetail } from './api';
 
   let { detail, quizEnabled }: { detail: FileDetail; quizEnabled: boolean } = $props();
 
@@ -39,6 +39,10 @@
     return down.length ? `${head} Pulling it down: ${down.join('; ')}.` : head;
   });
 
+  const reviewDue = $derived(!f.stats.lastReview || (!!f.stats.lastEdit && f.stats.lastEdit > f.stats.lastReview));
+  let reviewError = $state('');
+  const review = () => api.markReviewed(detail.repo.id, f.path).then(() => (reviewError = ''), (e: Error) => (reviewError = e.message));
+
   /** What would add points from here, given what is already counted against each cap. */
   const toGreen = $derived.by(() => {
     const need = c.buckets.green - f.score;
@@ -54,6 +58,7 @@
       { key: 'quizPass' as const, text: quizEnabled ? 'Explain it back in the daily quiz' : 'Explain it back in the quiz (turn the quiz on in Settings)', each: c.positive.quizPass.points },
       { key: 'reference' as const, text: 'Name the file or one of its functions in your prompts', each: c.positive.reference.points },
       { key: 'correction' as const, text: 'Correct or reject Claude when an edit to it is wrong', each: c.positive.correction.points },
+      ...(reviewDue ? [{ key: 'reviewed' as const, text: "Read Claude's latest changes and mark it reviewed", each: c.positive.reviewed.points }] : []),
     ]
       .map((t) => ({ ...t, room: room(t.key) }))
       .filter((t) => t.room > 0);
@@ -72,7 +77,13 @@
     <div class="mt-1 flex items-center gap-2">
       <Badge bucket={f.bucket} score={f.score} />
       {#if f.neverUnderstood}<span class="crit text-sm">Never looked at</span>{/if}
+      {#if reviewDue}
+        <button class="btn ml-auto" title="You read Claude's latest changes to this file" onclick={review}>Mark as reviewed</button>
+      {:else}
+        <span class="muted ml-auto text-xs">Reviewed {relTime(f.stats.lastReview)}</span>
+      {/if}
     </div>
+    {#if reviewError}<p class="crit mt-1 text-xs">{reviewError}</p>{/if}
     <p class="summary mt-2 text-sm">{summary}</p>
     <div class="muted mt-1 text-xs">
       {f.stats.linesChanged} lines in {f.stats.edits} edits · first {relTime(f.stats.firstEdit)} · last {relTime(f.stats.lastEdit)}
@@ -85,7 +96,7 @@
         How to make this green
         <Info label="How to make this green">
           A file turns green at {c.buckets.green}. These actions add points the next time Claude works on the file. Each kind of evidence has a cap; the
-          list only shows what still has room. Evidence fades: it loses half its value every {c.halfLifeDays} days.
+          list only shows what still has room. Evidence fades: it loses half its value every {c.halfLifeDays} days, down to {Math.round(c.decayFloor * 100)}%.
         </Info>
       </h3>
       <p class="secondary text-xs">{toGreen.need} more point{toGreen.need === 1 ? '' : 's'} needed.</p>

@@ -61,8 +61,7 @@ export class Dashboard {
     if (m.type === 'openSettings') void openSettings(m.query);
     if (m.type === 'openFile' && typeof m.repoPath === 'string' && typeof m.path === 'string') {
       // Only files inside a project Claude Grasp knows, never an arbitrary path from the page.
-      const known = this.service.projects().projects.some((p) => p.path === m.repoPath);
-      if (!known || m.path.split('/').includes('..')) return;
+      if (!this.service.isProject(m.repoPath) || m.path.split('/').includes('..')) return;
       void vscode.window.showTextDocument(vscode.Uri.file(join(m.repoPath, ...m.path.split('/'))), { preview: true, viewColumn: vscode.ViewColumn.Beside });
     }
   }

@@ -12,7 +12,7 @@ import { STRICT_PENALTIES, withPenalties } from '../scoring/config';
 const DAY = 86_400_000;
 // Same numbers as scripts/smoke.ts, read through the service the dashboard uses.
 const DEFAULT_SCORES = {
-  'src/auth/session.ts': 69,
+  'src/auth/session.ts': 70,
   'src/orders/checkout.ts': 74,
   'src/orders/pricing.ts': 39,
   'src/utils/format.ts': 45,
@@ -116,6 +116,33 @@ describe('GraspService', () => {
     expect(service.quiz()?.questions[0]).toMatchObject({ skipped: true, score: null });
     expect(service.files(repoId).files).toEqual(before);
     await expect(service.skip(9999)).rejects.toThrow(/no open question/);
+  });
+
+  it("doesn't hold up reading sessions while the model writes or grades a question", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const fake = new FakeQuizModel();
+    const calls: string[] = [];
+    const slow = {
+      questions: async (...a: Parameters<FakeQuizModel['questions']>) => (calls.push('questions'), await gate, fake.questions(...a)),
+      grade: async (...a: Parameters<FakeQuizModel['grade']>) => (calls.push('grade'), await gate, fake.grade(...a)),
+    };
+    service.update({ quizEnabled: true, model: slow });
+    const quiz = Promise.all([service.makeQuiz(), service.makeQuiz()]);
+    await expect(service.ingest()).resolves.toMatchObject({ busy: false });
+    release();
+    const [a, b] = await quiz;
+    expect(a).toEqual(b);
+    expect(calls).toEqual(['questions']);
+  });
+
+  it('marks a file reviewed once per round of Claude changes', async () => {
+    const before = service.scoreForPath([repoPath, 'src', 'orders', 'pricing.ts'].join(sep))!;
+    expect(before.reviewDue).toBe(true);
+    await service.rpc('markReviewed', [repoId, 'src/orders/pricing.ts']);
+    const after = service.scoreForPath([repoPath, 'src', 'orders', 'pricing.ts'].join(sep))!;
+    expect(after).toMatchObject({ reviewDue: false, score: before.score + 8 });
+    await expect(service.markReviewed(repoId, 'src/nope.ts')).rejects.toThrow(/unknown file/);
   });
 
   it('only answers known rpc methods with checked arguments', async () => {

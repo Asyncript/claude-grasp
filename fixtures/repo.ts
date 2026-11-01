@@ -23,6 +23,9 @@ export interface FixtureCommit {
   files: Record<string, string>;
 }
 
+/** Files in the demo repo's working tree that were never committed (the headless run's output). */
+export const FIXTURE_UNCOMMITTED: Record<string, string> = { 'src/reports/daily.ts': F.DAILY_REPORT };
+
 /**
  * The demo repo's history. Expected attribution per file:
  * - README.md, package.json: prior (before Claude touched anything)

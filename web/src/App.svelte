@@ -48,6 +48,7 @@
   let scores = $state<ScoresResponse | null>(null);
   let detail = $state<FileDetail | null>(null);
   let error = $state('');
+  let detailError = $state('');
   let refreshing = $state(false);
   let version = $state(0);
   let sortBy = $state<'score' | 'lines' | 'recent'>('score');
@@ -115,9 +116,13 @@
     void version;
     if (repo === null || !path) {
       detail = null;
+      detailError = '';
       return;
     }
-    api.file(repo, path).then((d) => (detail = d)).catch(() => (detail = null));
+    api
+      .file(repo, path)
+      .then((d) => ((detail = d), (detailError = '')))
+      .catch((e: Error) => ((detail = null), (detailError = `Couldn't load ${path}: ${e.message}`)));
   });
 
   const visible = $derived.by(() => {
@@ -201,8 +206,8 @@
         <ul class="mt-1 text-sm">
           <li>Each file Claude Code changed gets a score from 0 to 100: <b>how well you understand it</b>, judged from what you did, not from the code.</li>
           <li>
-            <span class="good">■</span> <b>{scores.config.buckets.green}+ Understood</b> · <span class="warn">■</span> <b>{scores.config.buckets.yellow}–{scores.config.buckets.green - 1} Partial</b> ·
-            <span class="crit">■</span> <b>under {scores.config.buckets.yellow} At risk</b>. A file goes green when you plan with Claude, ask why/how, correct it, or commit changes yourself.
+            <span class="good">■</span> <b>{scores.config.buckets.green}+ Familiar</b> · <span class="warn">■</span> <b>{scores.config.buckets.yellow}–{scores.config.buckets.green - 1} Partial</b> ·
+            <span class="crit">■</span> <b>under {scores.config.buckets.yellow} Unfamiliar</b>. A file goes green when you plan with Claude, ask why/how, correct it, or commit changes yourself.
           </li>
           <li>Click any file to see every point behind its score and <b>what would make it green</b>. The <b>i</b> buttons explain each part.</li>
           <li>Penalties for auto-accept, "continue" and similar are off unless you turn them on in <b>Settings</b>. See the <button class="link" onclick={() => go('#/guide')}>Guide</button>.</li>
@@ -320,6 +325,7 @@
         {#if detail}
           <FilePanel {detail} quizEnabled={settings?.quizEnabled ?? false} />
         {:else}
+          {#if detailError}<p class="crit mb-3 text-sm">{detailError}</p>{/if}
           <h2 class="font-semibold">Pick a file</h2>
           <p class="muted mt-1 text-sm">Click a block in the map or a row in the list to see exactly which signals produced its score, and what would make it green.</p>
           <div class="mt-4 text-sm">

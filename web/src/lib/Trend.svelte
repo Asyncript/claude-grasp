@@ -48,7 +48,7 @@
       <div class="tip card" style="left:{Math.min(x(hover) + 10, width - 190)}px">
         <div class="secondary">{daily ? fmt(p.at) : `Week ending ${fmt(p.at)}`}</div>
         <div><b>{p.score}</b> across {p.files} files</div>
-        <div class="secondary">{p.green} understood · {p.yellow} partial · {p.red} at risk</div>
+        <div class="secondary">{p.green} familiar · {p.yellow} partial · {p.red} unfamiliar</div>
       </div>
     {/if}
   {/if}

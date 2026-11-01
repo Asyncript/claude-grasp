@@ -22,9 +22,9 @@
       the plans you shaped, the questions you asked, the corrections you made, the commits you wrote yourself. Every file gets a score from 0 to 100.
     </p>
     <div class="buckets mt-3">
-      <div><span class="dot green"></span><b>{c.buckets.green}–100 Understood.</b> You clearly engaged with this code.</div>
+      <div><span class="dot green"></span><b>{c.buckets.green}–100 Familiar.</b> You clearly engaged with this code.</div>
       <div><span class="dot yellow"></span><b>{c.buckets.yellow}–{c.buckets.green - 1} Partial.</b> Some engagement; worth a closer look before you change it.</div>
-      <div><span class="dot red"></span><b>0–{c.buckets.yellow - 1} At risk.</b> Claude wrote it and little shows that you know how it works.</div>
+      <div><span class="dot red"></span><b>0–{c.buckets.yellow - 1} Unfamiliar.</b> Claude wrote it and little shows that you know how it works.</div>
     </div>
   </section>
 
@@ -42,7 +42,7 @@
 
   <section>
     <h2>What raises a score</h2>
-    <p class="muted">Every file starts at {c.base}. Each kind of evidence adds points up to a cap, and loses half its value every {c.halfLifeDays} days.</p>
+    <p class="muted">Every file starts at {c.base}. Each kind of evidence adds points up to a cap, and loses half its value every {c.halfLifeDays} days, but never below {Math.round(c.decayFloor * 100)}% of it. Credit from a turn that changed more than {c.fullCreditFiles} files is split between them, unless your prompt named the file.</p>
     <table>
       <thead><tr><th>You…</th><th>Points</th><th>Up to</th></tr></thead>
       <tbody>
@@ -52,6 +52,7 @@
         <tr><td>Named the file or one of its functions, or had it open in the IDE</td><td>+{p.reference.points}</td><td>{p.reference.cap}</td></tr>
         <tr><td>Changed and committed it yourself</td><td>+{p.humanCommit.points}</td><td>{p.humanCommit.cap}</td></tr>
         <tr><td>Changed it outside Claude (weak signal)</td><td>+{p.externalEdit.points}</td><td>{p.externalEdit.cap}</td></tr>
+        <tr><td>Marked it reviewed after Claude changed it (CodeLens or this panel)</td><td>+{p.reviewed.points}</td><td>{p.reviewed.cap}</td></tr>
         <tr><td>Explained it back in the quiz (scaled by the grade)</td><td>+{p.quizPass.points}</td><td>{p.quizPass.cap}</td></tr>
       </tbody>
     </table>

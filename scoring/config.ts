@@ -9,7 +9,9 @@ export interface ScoringConfig {
   base: number;
   buckets: { green: number; yellow: number };
   halfLifeDays: number;
-  positive: Record<'plan' | 'question' | 'correction' | 'reference' | 'humanCommit' | 'externalEdit' | 'quizPass', Weight>;
+  decayFloor: number;
+  fullCreditFiles: number;
+  positive: Record<'plan' | 'question' | 'correction' | 'reference' | 'humanCommit' | 'externalEdit' | 'reviewed' | 'quizPass', Weight>;
   plan: { minWords: number };
   quizPassGrade: number;
   negative: {
@@ -58,6 +60,18 @@ export const SCORING: ScoringConfig = {
   /** Positive evidence loses half its value every this many days. Penalties don't decay. */
   halfLifeDays: 30,
 
+  /**
+   * Decay never takes positive evidence below this share of its value: code you once worked
+   * through doesn't become "unfamiliar" just because months went by.
+   */
+  decayFloor: 0.25,
+
+  /**
+   * A turn that changed more files than this splits its plan, question and correction credit:
+   * each file gets fullCreditFiles / n of it, unless the prompt named that file.
+   */
+  fullCreditFiles: 3,
+
   /** Positive signals: `points` per piece of evidence, at most `cap` in total. */
   positive: {
     /** An approved plan in a turn that edited the file, with substantive human input (see `plan`). */
@@ -72,6 +86,8 @@ export const SCORING: ScoringConfig = {
     humanCommit: { points: 10, cap: 20 },
     /** Claude Code saw the file change outside Claude (you or a tool, so it counts for little). */
     externalEdit: { points: 2, cap: 6 },
+    /** You marked the file reviewed after Claude changed it. Only your word, so less than a commit. */
+    reviewed: { points: 8, cap: 16 },
     /** An explain-back answer about the file, scaled by its grade (0-1). */
     quizPass: { points: 25, cap: 30 },
   },

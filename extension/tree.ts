@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import type { Bucket } from '../scoring/config';
 import type { GraspService } from './service';
 
-export const BUCKET_LABEL: Record<Bucket, string> = { green: 'Understood', yellow: 'Partial', red: 'At risk' };
+export const BUCKET_LABEL: Record<Bucket, string> = { green: 'Familiar', yellow: 'Partial', red: 'Unfamiliar' };
 export const BUCKET_COLOR: Record<Bucket, string> = { green: 'claudeGrasp.understood', yellow: 'claudeGrasp.partial', red: 'claudeGrasp.atRisk' };
 
 type Node =

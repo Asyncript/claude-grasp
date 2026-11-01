@@ -21,28 +21,28 @@ const RS = '\x1e';
 const FS = '\x1f';
 const FORMAT = `--format=${RS}%H${FS}%at${FS}%an${FS}%ae${FS}%B${FS}`;
 
-export function headSha(repo: string): string | null {
+export async function headSha(repo: string): Promise<string | null> {
   try {
-    return git(repo, ['rev-parse', '--verify', '-q', 'HEAD']).trim() || null;
+    return (await git(repo, ['rev-parse', '--verify', '-q', 'HEAD'])).trim() || null;
   } catch {
     return null;
   }
 }
 
-export function isAncestor(repo: string, ancestor: string, head: string): boolean {
+export async function isAncestor(repo: string, ancestor: string, head: string): Promise<boolean> {
   try {
-    git(repo, ['merge-base', '--is-ancestor', ancestor, head]);
+    await git(repo, ['merge-base', '--is-ancestor', ancestor, head]);
     return true;
   } catch {
     return false;
   }
 }
 
-export function readCommits(repo: string, opts: { range?: string; since?: string } = {}): Commit[] {
+export async function readCommits(repo: string, opts: { range?: string; since?: string } = {}): Promise<Commit[]> {
   const args = ['log', '--no-merges', '--no-renames', FORMAT, '--numstat'];
   if (opts.since) args.push(`--since=${opts.since}`);
   if (opts.range) args.push(opts.range);
-  return parseLog(git(repo, args));
+  return parseLog(await git(repo, args));
 }
 
 export function parseLog(out: string): Commit[] {

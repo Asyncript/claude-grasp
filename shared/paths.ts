@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 let homeOverride: string | null = null;
@@ -36,13 +36,13 @@ export const DEFAULT_CONFIG_DIR = (): string => join(homedir(), '.claude');
 
 /**
  * Claude Code config dirs to read, in order of precedence:
- * 1. `explicit` (--config-dir flags), or CLAUDE_GRASP_ROOTS (colon-separated)
+ * 1. `explicit` (--config-dir flags), or CLAUDE_GRASP_ROOTS (separated like PATH: ":", or ";" on Windows)
  * 2. `configDirs` from ~/.claude-grasp/config.json, plus CLAUDE_CONFIG_DIR
  * 3. every ~/.claude* directory with a projects/ folder, plus CLAUDE_CONFIG_DIR
  */
 export function configDirs(explicit: string[] = [], fromConfig?: string[]): string[] {
   if (explicit.length) return unique(explicit.map(expandHome));
-  if (process.env.CLAUDE_GRASP_ROOTS) return unique(process.env.CLAUDE_GRASP_ROOTS.split(':').filter(Boolean).map(expandHome));
+  if (process.env.CLAUDE_GRASP_ROOTS) return unique(process.env.CLAUDE_GRASP_ROOTS.split(delimiter).filter(Boolean).map(expandHome));
 
   const dirs: string[] = [];
   if (process.env.CLAUDE_CONFIG_DIR) dirs.push(expandHome(process.env.CLAUDE_CONFIG_DIR));

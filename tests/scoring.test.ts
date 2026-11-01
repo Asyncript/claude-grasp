@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -8,6 +8,7 @@ import { FIXTURE_ANCHOR } from '../fixtures/repo';
 import { ingest } from '../ingest/run';
 import { bucketOf, SCORING, STRICT_PENALTIES, withPenalties } from '../scoring/config';
 import { loadRepo, mentionMatcher, scoreRepo, summarize, trend } from '../scoring/repo';
+import { globToRegExp } from '../scoring/visible';
 import { scoreFile, type FileEdit, type FileInput, type Prompt, type Turn } from '../scoring/score';
 
 const DAY = 86_400_000;
@@ -70,9 +71,25 @@ describe('scoreFile', () => {
 
   it('halves positive evidence every half-life', () => {
     const t = turnsOf(prompt('p', NOW - SCORING.halfLifeDays * DAY, { isQuestion: true }));
-    const s = scoreFile(file({ edits: [edit('p', NOW - SCORING.halfLifeDays * DAY)] }), t, NOW);
+    const s = scoreFile(file({ edits: [edit('p', NOW - SCORING.halfLifeDays * DAY)] }), t, NOW, { ...SCORING, decayFloor: 0 });
     expect(points(s, 'question')).toBe(6);
     expect(points(s, 'decay')).toBeCloseTo(-3, 6);
+  });
+
+  it('never decays positive evidence below the floor', () => {
+    const t = turnsOf(prompt('p', NOW - 1000 * DAY, { isQuestion: true }));
+    const s = scoreFile(file({ edits: [edit('p', NOW - 1000 * DAY)] }), t, NOW);
+    expect(points(s, 'decay')).toBeCloseTo(-6 * (1 - SCORING.decayFloor), 3);
+  });
+
+  it('splits credit in a turn that changed many files, unless the prompt named the file', () => {
+    const t = turnsOf(prompt('q', NOW - 1000, { isQuestion: true }));
+    t.get('q')!.files = 6;
+    const shared = scoreFile(file({ edits: [edit('q', NOW - 1000)] }), t, NOW);
+    expect(points(shared, 'question')).toBeCloseTo(6 * (SCORING.fullCreditFiles / 6), 6);
+    expect(shared.contributions.find((c) => c.key === 'question')!.evidence[0]!.text).toContain('shared by 6 files');
+    const named = scoreFile(file({ edits: [edit('q', NOW - 1000)], mentions: [{ uuid: 'q', ts: NOW - 1000, sessionId: 's', excerpt: 'why a.ts', matched: 'a.ts' }] }), t, NOW);
+    expect(points(named, 'question')).toBe(6);
   });
 
   it('penalizes unattended edits more than bare approvals and gives them no credit', () => {
@@ -124,6 +141,16 @@ describe('scoreFile', () => {
     expect(scoreFile(f, t, NOW).stats.edits).toBe(1);
   });
 
+  it('counts a review only after Claude changed the file since the last one', () => {
+    const t = turnsOf(prompt('p', NOW - 10 * DAY), prompt('p2', NOW - 2 * DAY));
+    const reviews = [{ ts: NOW - 9 * DAY }, { ts: NOW - 8 * DAY }, { ts: NOW - DAY }];
+    const s = scoreFile(file({ edits: [edit('p', NOW - 10 * DAY), edit('p2', NOW - 2 * DAY)], reviews }), t, NOW, { ...SCORING, decayFloor: 1 });
+    expect(s.contributions.find((c) => c.key === 'reviewed')!.evidence).toHaveLength(2);
+    expect(points(s, 'reviewed')).toBe(SCORING.positive.reviewed.points * 2);
+    expect(s.neverUnderstood).toBe(false);
+    expect(s.stats.lastReview).toBe(new Date(NOW - DAY).toISOString());
+  });
+
   it('buckets at 70 and 40', () => {
     expect([bucketOf(70), bucketOf(69), bucketOf(40), bucketOf(39)]).toEqual(['green', 'yellow', 'yellow', 'red']);
   });
@@ -163,5 +190,32 @@ describe('scoring the fixture repo', () => {
     expect(summarize([...scores.values()]).files).toBe(6);
     // Three days earlier, daily.ts (headless, day -1) didn't exist yet.
     expect(trend(data, FIXTURE_ANCHOR - 3 * DAY, 1, 7, STRICT).map((p) => p.files)).toEqual([5]);
+  });
+});
+
+describe('which files get a score', () => {
+  it('matches globs the way .gitignore does', () => {
+    const m = (glob: string, path: string) => globToRegExp(glob).test(path);
+    expect(m('package-lock.json', 'web/package-lock.json')).toBe(true);
+    expect(m('**/dist/**', 'dist/a.js')).toBe(true);
+    expect(m('**/dist/**', 'src/distance.ts')).toBe(false);
+    expect(m('*.min.js', 'public/vendor/x.min.js')).toBe(true);
+    expect(m('src/*.ts', 'src/a/b.ts')).toBe(false);
+    expect(m('src/?.ts', 'src/a.ts')).toBe(true);
+  });
+
+  it('leaves out deleted, git-ignored and ignored-by-setting files', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'claude-grasp-visible-'));
+    const demo = prepareDemo(join(home, 'demo'));
+    const repo = demo.repoPath;
+    rmSync(join(repo, 'src', 'db', 'migrations.ts'));
+    // format.ts is committed, so ignoring its folder doesn't hide it; daily.ts never was.
+    writeFileSync(join(repo, '.gitignore'), 'src/reports/\nsrc/utils/\n');
+    const db = openDb(join(home, 'claude-grasp.db'));
+    await ingest(db, demo.roots);
+    const repoId = (db.prepare('SELECT id FROM repos').get() as { id: number }).id;
+    const paths = (o?: Parameters<typeof loadRepo>[2]) => loadRepo(db, repoId, o)!.files.map((f) => f.path).sort();
+    expect(paths()).toEqual(['src/auth/session.ts', 'src/orders/checkout.ts', 'src/orders/pricing.ts', 'src/utils/format.ts']);
+    expect(paths({ ignore: ['src/orders/**'] })).toEqual(['src/auth/session.ts', 'src/utils/format.ts']);
   });
 });

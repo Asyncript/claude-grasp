@@ -110,6 +110,20 @@ describe('explain-back quiz', () => {
     expect(scoreRepo(loadRepo(db, q.repoId)!).find((s) => s.path === q.path)!.score).toBe(before);
     expect(() => skipQuestion(db, 999)).toThrow(/no open question/);
   });
+
+  it('grades each question once, and treats an empty answer as no answer', async () => {
+    const model = new RecordingModel();
+    const quiz = (await ensureQuiz(db, model, {}))!;
+    const q = quiz.questions[0]!;
+    await expect(answerQuestion(db, model, q.id, '   ')).rejects.toThrow(/Write an answer/);
+    expect(db.prepare('SELECT score FROM quiz_questions WHERE id = ?').get(q.id)).toEqual({ score: null });
+
+    // Two submits racing: only the first is stored, the second is refused.
+    const answers = await Promise.allSettled([answerQuestion(db, model, q.id, 'first try'), answerQuestion(db, model, q.id, 'second try')]);
+    expect(answers.map((a) => a.status)).toEqual(['fulfilled', 'rejected']);
+    expect(db.prepare('SELECT answer FROM quiz_questions WHERE id = ?').get(q.id)).toEqual({ answer: 'first try' });
+    await expect(answerQuestion(db, model, q.id, 'third try')).rejects.toThrow(/already answered/);
+  });
 });
 
 describe('claude -p wrapper', () => {

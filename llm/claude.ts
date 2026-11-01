@@ -38,9 +38,22 @@ export function claudeEnv(configDir: string, base: NodeJS.ProcessEnv = process.e
 export function findClaude(configured?: string): string {
   if (process.env.CLAUDE_GRASP_BIN) return process.env.CLAUDE_GRASP_BIN;
   if (configured) return expandHome(configured);
-  const exe = process.platform === 'win32' ? 'claude.exe' : 'claude';
-  const candidates = [join(homedir(), '.local', 'bin', exe), join(homedir(), '.claude', 'local', exe), '/opt/homebrew/bin/claude', '/usr/local/bin/claude'];
+  const win = process.platform === 'win32';
+  const exe = win ? 'claude.exe' : 'claude';
+  const candidates = [join(homedir(), '.local', 'bin', exe), join(homedir(), '.claude', 'local', exe)];
+  if (win) candidates.push(...(process.env.APPDATA ? [join(process.env.APPDATA, 'npm', 'claude.cmd')] : []));
+  else candidates.push('/opt/homebrew/bin/claude', '/usr/local/bin/claude');
   return candidates.find((c) => existsSync(c)) ?? 'claude';
+}
+
+/**
+ * On Windows an npm install is a .cmd script (or just `claude` on PATH), which only a shell can
+ * run: Node refuses to spawn .cmd/.bat files directly. Every argument is then quoted for cmd.exe.
+ */
+function command(bin: string, args: string[]): { file: string; args: string[]; shell: boolean } {
+  if (process.platform !== 'win32' || /\.exe$/i.test(bin)) return { file: bin, args, shell: false };
+  const quote = (a: string) => `"${a.replace(/"/g, '""')}"`;
+  return { file: quote(bin), args: args.map(quote), shell: true };
 }
 
 /** Runs the local `claude -p`, always from Claude Grasp's own working directory so ingest can skip it. */
@@ -55,7 +68,8 @@ export class ClaudeCli implements Completer {
     const args = [...CLAUDE_ARGS, ...(this.config.model ? ['--model', this.config.model] : [])];
 
     return new Promise((resolvePromise, reject) => {
-      const child = spawn(bin, args, { cwd, env: claudeEnv(configDir), stdio: ['pipe', 'pipe', 'pipe'] });
+      const cmd = command(bin, args);
+      const child = spawn(cmd.file, cmd.args, { cwd, env: claudeEnv(configDir), stdio: ['pipe', 'pipe', 'pipe'], shell: cmd.shell, windowsHide: true });
       let out = '';
       let err = '';
       const timer = setTimeout(() => child.kill('SIGTERM'), TIMEOUT_MS);

@@ -14,6 +14,13 @@ const MAX_DIFF_LINES = 160;
 /** With nothing today, the quiz looks this far back for the latest day with edits. */
 const LOOKBACK_DAYS = 7;
 
+/**
+ * Runs a write. The extension passes its write queue, so a write never lands inside an ingest's
+ * open transaction while a slow model call is in flight.
+ */
+export type Writer = <T>(fn: () => T) => T | Promise<T>;
+const direct: Writer = (fn) => fn();
+
 /** YYYY-MM-DD in local time. */
 export function localDay(ms = Date.now()): string {
   const d = new Date(ms);
@@ -120,7 +127,7 @@ export function todaySummary(db: DB, config: GraspConfig, now = Date.now()): Tod
   }
 
   for (const repoId of new Set(rows.map((r) => r.repo_id))) {
-    const data = loadRepo(db, repoId);
+    const data = loadRepo(db, repoId, { gitEmails: config.gitEmails, ignore: config.ignore });
     if (!data) continue;
     for (const s of scoreRepo(data, now, config.scoring)) {
       const f = files.get(`${repoId}\0${s.path}`);
@@ -180,7 +187,7 @@ export function quizFor(db: DB, day: string, reveal = true): QuizView | null {
  * most with the least understanding. Each file's diff goes only to the account (config dir) that
  * produced it; files from accounts with explain-back disabled are never sent anywhere.
  */
-export async function ensureQuiz(db: DB, model: QuizModel, config: GraspConfig, now = Date.now()): Promise<QuizView | null> {
+export async function ensureQuiz(db: DB, model: QuizModel, config: GraspConfig, now = Date.now(), write: Writer = direct): Promise<QuizView | null> {
   const day = localDay(now);
   const existing = quizFor(db, day);
   if (existing) return existing;
@@ -217,12 +224,16 @@ export async function ensureQuiz(db: DB, model: QuizModel, config: GraspConfig, 
   }
   if (!rows.length) return null;
 
-  transaction(db, () => {
-    const { lastInsertRowid } = db.prepare('INSERT INTO quizzes (day, created_at, summary) VALUES (?, ?, ?)').run(day, new Date(now).toISOString(), JSON.stringify(summary.totals));
-    const ins = db.prepare('INSERT INTO quiz_questions (quiz_id, config_dir, repo_id, rel_path, question, expected, diff) VALUES (?, ?, ?, ?, ?, ?, ?)');
-    for (const r of rows) ins.run(lastInsertRowid, r.dir, r.file.repoId, r.file.path, r.question, r.expected, r.file.diff);
+  return write(() => {
+    // Another window may have made today's quiz while the model was answering; keep theirs.
+    transaction(db, () => {
+      if (quizFor(db, day)) return;
+      const { lastInsertRowid } = db.prepare('INSERT INTO quizzes (day, created_at, summary) VALUES (?, ?, ?)').run(day, new Date(now).toISOString(), JSON.stringify(summary.totals));
+      const ins = db.prepare('INSERT INTO quiz_questions (quiz_id, config_dir, repo_id, rel_path, question, expected, diff) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      for (const r of rows) ins.run(lastInsertRowid, r.dir, r.file.repoId, r.file.path, r.question, r.expected, r.file.diff);
+    });
+    return quizFor(db, day);
   });
-  return quizFor(db, day);
 }
 
 /** Marks a question skipped. It never affects a score; it can still be answered later the same day. */
@@ -231,15 +242,25 @@ export function skipQuestion(db: DB, questionId: number, now = Date.now()): void
   if (!r.changes) throw new Error(`no open question ${questionId}`);
 }
 
-/** Grades one answer through the same account that wrote the question, and stores the result. */
-export async function answerQuestion(db: DB, model: QuizModel, questionId: number, answer: string, now = Date.now()) {
-  const q = db.prepare('SELECT id, config_dir, rel_path, question, expected, diff FROM quiz_questions WHERE id = ?').get(questionId) as
-    | { id: number; config_dir: string; rel_path: string; question: string; expected: string; diff: string }
+/**
+ * Grades one answer through the same account that wrote the question, and stores the result.
+ * Each question is graded once: answering again until it passes would make the grade meaningless.
+ */
+export async function answerQuestion(db: DB, model: QuizModel, questionId: number, answer: string, now = Date.now(), write: Writer = direct) {
+  const q = db.prepare('SELECT id, config_dir, rel_path, question, expected, diff, score FROM quiz_questions WHERE id = ?').get(questionId) as
+    | { id: number; config_dir: string; rel_path: string; question: string; expected: string; diff: string; score: number | null }
     | undefined;
   if (!q) throw new Error(`no question ${questionId}`);
+  if (q.score !== null) throw new Error('This question is already answered.');
   const text = answer.trim();
-  const grade = text ? await model.grade({ path: q.rel_path, question: q.question, expected: q.expected, diff: q.diff }, text, q.config_dir) : { score: 0, feedback: 'No answer.' };
-  db.prepare('UPDATE quiz_questions SET answer = ?, score = ?, feedback = ?, answered_at = ?, skipped = 0 WHERE id = ?').run(text, grade.score, grade.feedback, new Date(now).toISOString(), q.id);
+  // An empty answer is a skip, not a 0 that the failed-quiz penalty would count.
+  if (!text) throw new Error('Write an answer, or skip the question.');
+  const grade = await model.grade({ path: q.rel_path, question: q.question, expected: q.expected, diff: q.diff }, text, q.config_dir);
+  // Only if still open: a second submit sent while the first was being graded changes nothing.
+  const r = await write(() =>
+    db.prepare('UPDATE quiz_questions SET answer = ?, score = ?, feedback = ?, answered_at = ?, skipped = 0 WHERE id = ? AND score IS NULL').run(text, grade.score, grade.feedback, new Date(now).toISOString(), q.id),
+  );
+  if (!r.changes) throw new Error('This question is already answered.');
   return { ...grade, expected: q.expected };
 }
 

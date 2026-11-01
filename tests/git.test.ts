@@ -6,7 +6,9 @@ import { openDb } from '../db';
 import { prepareDemo } from '../demo/prepare';
 import { attributeFileCommits, isClaudeCommit } from '../git/attribution';
 import { parseLog, readCommits } from '../git/log';
+import { FIXTURE_AUTHOR } from '../fixtures/repo';
 import { ingest } from '../ingest/run';
+import { loadRepo, type LoadOptions } from '../scoring/repo';
 
 describe('isClaudeCommit', () => {
   it('matches the trailer by address, any model name, any case', () => {
@@ -47,11 +49,41 @@ describe('attributeFileCommits', () => {
   });
 });
 
+describe('commit authors', () => {
+  const c = (sha: string, ts: number, email: string) => ({ sha, ts, isClaude: false, email });
+
+  it("never counts someone else's commit as yours", () => {
+    const mine = (e: string) => e === 'me@x.com';
+    const result = attributeFileCommits([c('teammate', 300, 'sam@x.com'), c('me', 400, 'me@x.com')], [100], mine);
+    expect(result.map((r) => [r.sha, r.attribution])).toEqual([
+      ['teammate', 'other'],
+      ['me', 'human'],
+    ]);
+  });
+
+  it('uses the repo user.email and gitEmails when scoring', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'claude-grasp-git-'));
+    const { roots, repoPath } = prepareDemo(join(home, 'demo'));
+    const db = openDb(join(home, 'claude-grasp.db'));
+    await ingest(db, roots);
+    const repo = db.prepare('SELECT id, user_email FROM repos WHERE path = ?').get(repoPath) as { id: number; user_email: string };
+    expect(repo.user_email).toBe(FIXTURE_AUTHOR.email);
+    const humanCommits = (o?: LoadOptions) => loadRepo(db, repo.id, o)!.files.find((f) => f.path === 'src/utils/format.ts')!.commits.map((x) => x.attribution);
+    expect(humanCommits()).toEqual(['ambiguous', 'human']);
+
+    // Someone else's clone: Dana's commits are a teammate's now, unless listed as yours.
+    db.prepare('UPDATE repos SET user_email = ?').run('sam@example.com');
+    expect(humanCommits()).toEqual(['other', 'other']);
+    expect(humanCommits({ gitEmails: [FIXTURE_AUTHOR.email.toUpperCase()] })).toEqual(['ambiguous', 'human']);
+    db.close();
+  });
+});
+
 describe('fixture repo', () => {
   it('reads history and attributes each file as the fixture story says', async () => {
     const home = mkdtempSync(join(tmpdir(), 'claude-grasp-git-'));
     const { roots, repoPath } = prepareDemo(join(home, 'demo'));
-    const commits = readCommits(repoPath);
+    const commits = await readCommits(repoPath);
     expect(commits).toHaveLength(6);
     expect(commits.filter((x) => x.isClaude).map((x) => x.subject)).toEqual(['Fix double discount in checkout total', 'Add in-memory sessions with refresh']);
 

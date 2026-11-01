@@ -1,17 +1,40 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
+import { promisify } from 'node:util';
+
+const run = promisify(execFile);
 
 /**
  * Runs a read-only git command. GIT_OPTIONAL_LOCKS=0 stops git from refreshing the
- * index as a side effect, so Claude Grasp never writes inside a user's repo.
+ * index as a side effect, so Claude Grasp never writes inside a user's repo. Asynchronous,
+ * so a long `git log` never freezes the editor's extension host.
  */
-export function git(repo: string, args: string[]): string {
-  return execFileSync('git', ['-C', repo, '-c', 'core.quotepath=off', ...args], {
+export async function git(repo: string, args: string[]): Promise<string> {
+  const { stdout } = await run('git', ['-C', repo, '-c', 'core.quotepath=off', ...args], {
     encoding: 'utf8',
     maxBuffer: 1 << 30,
-    stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+  });
+  return stdout;
+}
+
+/**
+ * Which of these repo-relative paths git ignores (`git check-ignore --stdin`). Tracked files
+ * never count as ignored, even under an ignored folder. Exit code 1 means none are ignored.
+ */
+export function gitIgnored(repo: string, paths: string[]): Promise<string[]> {
+  if (!paths.length) return Promise.resolve([]);
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', ['-C', repo, '-c', 'core.quotepath=off', 'check-ignore', '-z', '--stdin'], { env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } });
+    let out = '';
+    let err = '';
+    child.stdout.setEncoding('utf8').on('data', (d: string) => (out += d));
+    child.stderr.setEncoding('utf8').on('data', (d: string) => (err += d));
+    child.on('error', reject);
+    child.on('close', (code) => (code === 0 || code === 1 ? resolve(out.split('\0').filter(Boolean)) : reject(new Error(err.trim() || `git check-ignore exited with ${code}`))));
+    child.stdin.on('error', () => {});
+    child.stdin.end(paths.join('\0') + '\0');
   });
 }
 

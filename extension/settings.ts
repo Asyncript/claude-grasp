@@ -10,6 +10,7 @@ export interface ExtensionSettings {
   quizEnabled: boolean;
   quizReminder: boolean;
   explorerBadges: boolean;
+  codeLens: boolean;
   refreshIntervalMinutes: number;
 }
 
@@ -22,6 +23,8 @@ export function readSettings(): ExtensionSettings {
     config: {
       configDirs: list('configDirs'),
       explainBackDisabled: list('quiz.disabledConfigDirs'),
+      gitEmails: list('gitEmails'),
+      ignore: list('ignore'),
       claudeBin: text('claudePath'),
       model: text('model'),
       questionsPerDay: s.get<number>('quiz.questionsPerDay', 1),
@@ -37,6 +40,7 @@ export function readSettings(): ExtensionSettings {
     quizEnabled: s.get<boolean>('quiz.enabled', false),
     quizReminder: s.get<boolean>('quiz.reminder', true),
     explorerBadges: s.get<boolean>('explorerBadges', true),
+    codeLens: s.get<boolean>('codeLens', true),
     refreshIntervalMinutes: Math.max(0, s.get<number>('refreshIntervalMinutes', 5)),
   };
 }

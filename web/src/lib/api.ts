@@ -63,6 +63,7 @@ export const api = {
   makeQuiz: () => call<QuizView | null>('makeQuiz'),
   answer: (id: number, answer: string) => call<{ score: number; feedback: string; expected: string }>('answer', id, answer),
   skip: (id: number) => call<void>('skip', id),
+  markReviewed: (repo: number, path: string) => call<void>('markReviewed', repo, path),
   ingest: () => call<IngestStats>('ingest'),
 };
 
@@ -99,7 +100,7 @@ export const prefs = {
   },
 };
 
-export const BUCKET_LABEL: Record<Bucket, string> = { green: 'Understood', yellow: 'Partial', red: 'At risk' };
+export const BUCKET_LABEL: Record<Bucket, string> = { green: 'Familiar', yellow: 'Partial', red: 'Unfamiliar' };
 
 export function relTime(iso: string | null): string {
   if (!iso) return '—';

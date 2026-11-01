@@ -2,7 +2,7 @@
   "name": "claude-grasp",
   "displayName": "Claude Grasp",
   "description": "How well do you understand the code Claude Code wrote for you? A score for every file, with the reasons behind it.",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "publisher": "Asyncript",
   "license": "MIT",
   "repository": {
@@ -52,6 +52,21 @@
         "title": "Refresh",
         "category": "Claude Grasp",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "claudeGrasp.rebuild",
+        "title": "Rebuild Data (read every session again)",
+        "category": "Claude Grasp"
+      },
+      {
+        "command": "claudeGrasp.markReviewed",
+        "title": "Mark This File Reviewed",
+        "category": "Claude Grasp"
+      },
+      {
+        "command": "claudeGrasp.showLog",
+        "title": "Show Log",
+        "category": "Claude Grasp"
       },
       {
         "command": "claudeGrasp.showFileScore",
@@ -120,6 +135,10 @@
         {
           "command": "claudeGrasp.showFileScore",
           "group": "3_open"
+        },
+        {
+          "command": "claudeGrasp.markReviewed",
+          "group": "3_open"
         }
       ]
     },
@@ -151,7 +170,7 @@
     "colors": [
       {
         "id": "claudeGrasp.understood",
-        "description": "Claude Grasp: files you understand (score 70 or more).",
+        "description": "Claude Grasp: Familiar files (score 70 or more).",
         "defaults": {
           "dark": "#3fb950",
           "light": "#0a7d0a",
@@ -161,7 +180,7 @@
       },
       {
         "id": "claudeGrasp.partial",
-        "description": "Claude Grasp: files you partly understand (40 to 69).",
+        "description": "Claude Grasp: Partial files (40 to 69).",
         "defaults": {
           "dark": "#d29922",
           "light": "#9a6700",
@@ -171,7 +190,7 @@
       },
       {
         "id": "claudeGrasp.atRisk",
-        "description": "Claude Grasp: files you may not understand (below 40).",
+        "description": "Claude Grasp: Unfamiliar files (below 40).",
         "defaults": {
           "dark": "#f85149",
           "light": "#cf222e",
@@ -191,6 +210,24 @@
           "default": [],
           "order": 1,
           "markdownDescription": "Claude Code config folders to read, e.g. `~/.claude` and `~/.claude-work`. Leave empty to find every `~/.claude*` folder automatically (plus `CLAUDE_CONFIG_DIR`). Each folder is one Claude account."
+        },
+        "claudeGrasp.ignore": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "order": 3,
+          "markdownDescription": "Files that never get a score, as globs (`**/generated/**`, `*.pb.go`). Lockfiles, bundles, source maps and snapshots are always left out, and so are files git ignores or that no longer exist."
+        },
+        "claudeGrasp.gitEmails": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "order": 2,
+          "markdownDescription": "Your git author emails, if you commit under more than one. Each repo's `git config user.email` always counts; commits by anyone else (teammates) never count as you changing the file yourself."
         },
         "claudeGrasp.quiz.enabled": {
           "type": "boolean",
@@ -278,6 +315,12 @@
           "default": true,
           "order": 30,
           "markdownDescription": "Show each file's score as a small colored badge in the Explorer and on editor tabs."
+        },
+        "claudeGrasp.codeLens": {
+          "type": "boolean",
+          "default": true,
+          "order": 30,
+          "markdownDescription": "Above the first line of each file Claude edited, show its score and a **Mark as reviewed** action for when you've read Claude's changes."
         },
         "claudeGrasp.refreshIntervalMinutes": {
           "type": "number",
